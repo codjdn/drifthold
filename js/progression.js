@@ -62,7 +62,13 @@
     for (var i = 0; i < STEPS.length; i++) {
       var st = STEPS[i];
       if (s.tut.done[st.id]) continue;
-      if (st.done(s)) { s.tut.done[st.id] = true; DH.G.markDirty(); continue; }
+      if (st.done(s)) {
+        // make sure whatever this step unlocks is unlocked even if its tip never got shown
+        s.tut.done[st.id] = true;
+        if (st.onShow && st.when(s)) st.onShow();
+        DH.G.markDirty();
+        continue;
+      }
       if (!st.when(s)) continue;
       if (st.scene !== DH.G.sceneName) continue;
       return st;
@@ -271,7 +277,11 @@
   };
 
   Prog.checkGoals = function (s, dt) {
-    if (!s || !s.unlocked.goals) return;
+    if (!s) return;
+    if (s.crew.length && !s.unlocked.map) DH.G.unlockBar('map');
+    if (s.crew.length && !s.unlocked.goals && s.tut.done.goals) s.unlocked.goals = true;
+    if (s.stats.partsBuilt > 0 && !s.unlocked.log && s.tut.done.log) DH.G.unlockBar('log');
+    if (!s.unlocked.goals) return;
     var changed = false;
     s.goals.forEach(function (g) {
       if (g.done) { g.doneT += dt; return; }
