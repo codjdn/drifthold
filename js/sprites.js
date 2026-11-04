@@ -485,7 +485,7 @@
     for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
       var v = n[y][x] * 0.75 + m[y][x] * 0.25;
       var col = -1;
-      if (v > 0.8) col = ((x + y) & 1) ? c1 : (((x & 1) === 0 && (y & 3) === 0) ? c2 : -1);
+      if (v > 0.8) col = ((x + y) & 1) ? c1 : (((x * 3 + y * 5) % 11 === 0) ? c2 : -1);
       else if (v > 0.68) col = ((x + y) & 1) ? c1 : -1;
       else if (v > 0.6) col = ((x & 1) === 0 && (y & 1) === 0) ? c1 : -1;
       if (col >= 0) { c.x.fillStyle = DH.PAL[col]; c.x.fillRect(x, y, 1, 1); }

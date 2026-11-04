@@ -842,11 +842,12 @@
 
   function edgeArrow(wx, wy, col, label, cx, cy) {
     var x = wx - cx, y = wy - cy;
-    var pad = 10, top = 22;
+    var top = 24;
     if (x >= 0 && y >= 0 && x < R.W && y < R.H) return false;
     var mx = R.W / 2, my = R.H / 2;
     var ang = Math.atan2(y - my, x - mx);
-    var ex = U.clamp(x, pad, R.W - pad), ey = U.clamp(y, top + pad, R.H - pad);
+    // keep clear of the ore counter (left) and the HUD strip (top)
+    var ex = U.clamp(x, 30, R.W - 10), ey = U.clamp(y, top + 8, R.H - 14);
     var tip = { x: ex + Math.cos(ang) * 4, y: ey + Math.sin(ang) * 4 };
     R.circ(ex, ey, 3, 0);
     R.line(ex, ey, tip.x, tip.y, col);

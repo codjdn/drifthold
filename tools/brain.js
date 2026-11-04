@@ -51,8 +51,9 @@ module.exports = function installBrain() {
       if (!s.job && Sim.partCap(s)) D.PART_ORDER.forEach(p => { if (s.parts[p] < Sim.partCap(s)) opts.push({ c: Sim.partNextCost(s, p), w: p === 'cargo' || p === 'drill' ? 0.75 : 1, f: () => Sim.startPart(s, p) }); });
       if (Sim.level(s, 'lab')) D.RESEARCH_ORDER.forEach(id => { if (Sim.researchAvailable(s, id)) opts.push({ c: D.RESEARCH[id].cost, w: 0.7, f: () => Sim.doResearch(s, id) }); });
       opts.sort((a, b) => a.w * costSize(a.c) - b.w * costSize(b.c));
-      const goal = opts[0];
-      if (goal && Sim.canAfford(s, goal.c) && goal.f()) bought = true;
+      // like a player: grab the best thing you can afford right now
+      const goal = opts.find(o => Sim.canAfford(s, o.c));
+      if (goal && goal.f()) bought = true;
     }
     // put idle crew to work
     s.crew.forEach(c => { if (c.room !== null && c.room !== undefined) return; for (const ty of ['hydroponics', 'refinery', 'workshop', 'lab', 'observatory', 'bridge', 'galley']) { const i = Sim.findSlot(s, ty); if (i >= 0 && Sim.assign(s, c.id, i)) break; } });
