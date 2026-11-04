@@ -130,7 +130,7 @@
     { alloy: 63, ion: 30, gold: 45 }, { alloy: 91, pearl: 30, cry: 70 }, { alloy: 126, void: 25, dust: 12 }];
   D.PART_MULT = { fuel: 1, cargo: 0.9, drill: 1.1, magnet: 0.9, shield: 1 };
   D.PART_TIME = [0, 6, 12, 25, 45, 75, 120, 180, 270, 400, 600]; // seconds of work at speed 1
-  D.CARGO_TABLE = [24, 32, 42, 54, 68, 84, 104, 128, 158, 192, 232];
+  D.CARGO_TABLE = [24, 32, 44, 60, 80, 104, 132, 165, 200, 240, 285];
   D.partCost = function (part, lvl) {
     var base = D.PART_COST[lvl];
     if (!base) return null;

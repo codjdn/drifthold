@@ -154,9 +154,11 @@
     UI.begin(dt);
     var s = G.state;
 
+    var steps = G.timeScale || 1;
     if (s && G.sceneName !== 'title') {
-      Sim.tick(s, dt, false);
-      s.stats.playTime += dt;
+      Sim.tick(s, dt * steps, false);
+      s.stats.playTime += dt * steps;
+      G.simTime = (G.simTime || 0) + dt * steps;
       s.lastTick = Date.now();
       G.saveTimer += dt;
       if ((G.dirty && G.saveTimer > 1.5) || G.saveTimer > 15) G.save();
@@ -169,7 +171,7 @@
     var ctx = R.ctx;
     ctx.save();
     if (G.scene) {
-      G.scene.update(dt);
+      for (var st = 0; st < steps; st++) G.scene.update(dt);
       G.scene.draw(dt);
     }
     // panel (only one at a time)
@@ -224,6 +226,9 @@
   };
 
   function boot() {
+    // ?speed=N runs the simulation N times per frame (automated playtests only)
+    var m = /[?&]speed=(\d+)/.exec(location.search);
+    G.timeScale = m ? Math.max(1, Math.min(16, +m[1])) : 1;
     var cv = document.getElementById('game');
     R.init(cv);
     In.init(cv);
@@ -242,6 +247,7 @@
     document.addEventListener('visibilitychange', function () {
       if (!G.state) return;
       if (document.hidden) {
+        if (G.sceneName === 'run' && DH.Scenes.run.pause) DH.Scenes.run.pause();
         G.save();
         DH.Snd.suspend();
         G.hiddenAt = Date.now();

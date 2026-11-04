@@ -150,7 +150,7 @@
   }
 
   // ------------------------------------------------------------------ input -> steering vector
-  var RET_BTN = function () { return { x: R.W - 46, y: 22, w: 43, h: 13 }; };
+  var RET_BTN = function () { return { x: R.W - 61, y: 12, w: 58, h: 13 }; };
   function steer() {
     var dx = 0, dy = 0, mag = 0;
     if (In.held('a', 'ArrowLeft')) dx -= 1;
@@ -249,9 +249,16 @@
   }
 
   // ------------------------------------------------------------------ update
+  Run.pause = function () { if (S && (S.phase === 'play' || S.phase === 'launch')) { S.paused = true; Snd.thrust(0); } };
   Run.update = function (dt) {
     if (!S) return;
     if (S.phase === 'tally') { updateTally(dt); return; }
+    if (S.paused) {
+      if (S.pauseT > 0.3 && (In.released || In.key('Escape', 'p', ' ', 'Enter'))) { S.paused = false; In.consume(); }
+      S.pauseT = (S.pauseT || 0) + dt;
+      return;
+    }
+    if (S.phase === 'play' && In.key('Escape', 'p')) { S.paused = true; S.pauseT = 0; Snd.thrust(0); return; }
     S.t += dt; S.pt += dt;
     var d = S.drone, st = S.st;
 
@@ -802,15 +809,26 @@
     if (S.storm) {
       var sm = S.storm;
       if (sm.active) {
-        for (var sl = 0; sl < 14; sl++) {
+        for (var sl = 0; sl < 10; sl++) {
           var sy = Math.floor(Math.random() * R.H), sx = Math.floor(Math.random() * R.W);
-          R.rect(sx, sy, Math.floor(rnd(6, 24)), 1, Math.random() < 0.5 ? 11 : 13);
+          R.rect(sx, sy, Math.floor(rnd(4, 16)), 1, Math.random() < 0.5 ? 11 : 13);
         }
-        R.dither25(0, 0, R.W, R.H, 3);
+        // wind streaks show which way you're being pushed
+        var wl = Math.sqrt(sm.wx * sm.wx + sm.wy * sm.wy) || 1;
+        for (var ws = 0; ws < 8; ws++) {
+          var wx0 = (ws * 61 + Math.floor(S.t * sm.wx * 2)) % R.W, wy0 = (ws * 37 + Math.floor(S.t * sm.wy * 2)) % R.H;
+          wx0 = (wx0 + R.W) % R.W; wy0 = (wy0 + R.H) % R.H;
+          R.line(wx0, wy0, wx0 + sm.wx / wl * 8, wy0 + sm.wy / wl * 8, 3);
+        }
       }
-      if (S.flashT > 0) R.dither(0, 0, R.W, R.H, 7);
+      if (S.flashT > 0) R.dither25(0, 0, R.W, R.H, 7);
     }
     if (S.phase !== 'tally') { drawWarnings(cx, cy); drawHUD(); }
+    if (S.paused) {
+      R.dim();
+      F.drawOutlined(ctx, 'PAUSED', R.W / 2, R.H / 2 - 12, 10, 0, { align: 'center' });
+      F.drawOutlined(ctx, In.hasTouch ? 'TAP TO KEEP DRILLING' : 'CLICK OR PRESS P TO RESUME', R.W / 2, R.H / 2, 7, 0, { align: 'center', font: 'small' });
+    }
     if (S.phase === 'tally') drawTally(dt);
   };
 
@@ -903,7 +921,8 @@
     var rb = RET_BTN();
     if (S.phase === 'play') {
       var flash = full && Math.floor(S.t * 4) % 2;
-      if (UI.button(rb.x, 12, rb.w, rb.h, 'RETURN', { style: flash ? 'good' : 'dark', font: 'small', id: 'run:return', sound: 'back' })) endRun('manual');
+      if (UI.button(rb.x + 15, 12, rb.w - 15, rb.h, 'RETURN', { style: flash ? 'good' : 'dark', font: 'small', id: 'run:return', sound: 'back' })) endRun('manual');
+      if (!S.paused && UI.button(rb.x, 12, 13, rb.h, 'II', { style: 'dark', font: 'small', id: 'run:pause', sound: 'tab' })) { S.paused = true; S.pauseT = 0; Snd.thrust(0); }
     }
     if (full && S.phase === 'play') F.drawOutlined(ctx, 'CARGO FULL! HEADING HOME', R.W / 2, R.H - 24, 11, 0, { align: 'center' });
     if (S.phase === 'return' || S.phase === 'dock') {

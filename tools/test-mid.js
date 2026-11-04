@@ -1,0 +1,73 @@
+// mid-game save: offline catch-up + welcome back, logbook, daily anomaly, sector hazards
+const H = require('./helpers');
+module.exports = async (page) => {
+  const SP = process.env.SP;
+  await page.evaluate(() => {
+    const s = DH.Save.defaultState();
+    s.hull = 6; s.revealed = 6;
+    s.slots = [{ type: 'bridge', lvl: 3 }, { type: 'quarters', lvl: 2 }, { type: 'workshop', lvl: 2 }, { type: 'hydroponics', lvl: 2 }, { type: 'refinery', lvl: 1 }, { type: 'observatory', lvl: 1 }];
+    s.slots.forEach(r => r.decor = null);
+    Object.assign(s.res, { cu: 120, ice: 80, cry: 10, food: 5, alloy: 3 });
+    s.seen.ores = { cu: true, ice: true, cry: true }; s.seen.sectors = { 1: true, 2: true };
+    ['quarters', 'workshop', 'hydroponics', 'refinery', 'observatory'].forEach(t => s.blueprints[t] = true);
+    for (let i = 0; i < 3; i++) { const c = DH.Crew.generate('mid' + i, 'kettle'); c.room = 2 + i; s.crew.push(c); s.seen.traits[c.trait] = { name: c.name, look: c.look }; }
+    s.visited = { kettle: 1, moss: 1 };
+    s.owned.decor = { plant: true }; s.owned.paint.mint = true;
+    s.job = { part: 'drill', lvl: 2, work: 0, need: 12 };
+    s.parts.cargo = 2; s.parts.drill = 1;
+    s.stats.runs = 9; s.stats.partsBuilt = 3;
+    s.unlocked = { ship: true, launch: true, map: true, log: true, goals: true, daily: true };
+    Object.keys({ welcome: 1, build1: 1, map: 1, visit: 1, goals: 1, expand: 1, workshop: 1, assign: 1, log: 1, food: 1, daily: 1, refinery: 1, travel: 1 }).forEach(k => s.tut.done[k] = true);
+    s.tut.done.logOpened = true;
+    s.lastTick = Date.now() - 3 * 3600 * 1000;
+    localStorage.setItem('drifthold.save', JSON.stringify(s));
+  });
+  await page.reload();
+  await page.waitForTimeout(900);
+  await H.tapAnywhere(page);
+  await page.waitForTimeout(2200);
+  await page.screenshot({ path: SP + '/m1_welcome.png' });
+  console.log('welcome', JSON.stringify(await page.evaluate(() => ({ panel: DH.G.panel && DH.G.panel.kind, res: DH.G.state.res, job: DH.G.state.job, parts: DH.G.state.parts }))));
+  await H.hit(page, 'wb:ok');
+  await page.waitForTimeout(400);
+  await H.hit(page, 'bar:log');
+  await page.waitForTimeout(400);
+  await H.hit(page, 'log:0');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: SP + '/m2_log.png' });
+  await H.hit(page, 'ltab:4');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: SP + '/m3_log_trinkets.png' });
+  await H.hit(page, 'panelclose');
+  await H.hit(page, 'room:2');
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: SP + '/m4_workshop.png' });
+  await H.hit(page, 'rtab:2');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: SP + '/m5_crew.png' });
+  await H.hit(page, 'panelclose');
+  await H.hit(page, 'bar:launch');
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: SP + '/m6_launch.png' });
+  await H.hit(page, 'l:daily');
+  await page.waitForTimeout(1500);
+  await H.autoMine(page, 5000);
+  await page.screenshot({ path: SP + '/m7_daily.png' });
+  await page.evaluate(() => { DH.Scenes.run.debug().drone.fuel = 0.2; });
+  await page.waitForTimeout(6000);
+  await page.screenshot({ path: SP + '/m8_daily_tally.png' });
+  await H.hit(page, 'run:continue');
+  await page.waitForTimeout(900);
+  for (const sec of [2, 3, 4, 5, 6]) {
+    await page.evaluate((sec) => { DH.G.state.sector = sec; DH.G.launch(null); }, sec);
+    await page.waitForTimeout(1600);
+    await page.evaluate(() => { const S = DH.Scenes.run.debug(); S.hazardT = 0; });
+    await H.autoMine(page, sec === 4 ? 4500 : 2600);
+    await page.screenshot({ path: SP + '/s' + sec + '.png' });
+    await page.evaluate(() => { DH.Scenes.run.debug().drone.fuel = 0.1; });
+    await page.waitForTimeout(5500);
+    await H.hit(page, 'run:continue');
+    await page.waitForTimeout(800);
+  }
+  console.log('end', JSON.stringify(await page.evaluate(() => ({ scene: DH.G.sceneName, runs: DH.G.state.stats.runs, daily: DH.G.state.daily, owned: DH.G.state.owned.decor }))));
+};

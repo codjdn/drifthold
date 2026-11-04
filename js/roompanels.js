@@ -120,7 +120,7 @@
 
   TABS.CREW = {
     height: function (s, slot, w, p) {
-      if (p.data.pick !== null) return 14 + s.crew.length * 16;
+      if (p.data.pick !== null) return 14 + s.crew.length * 20;
       return 70;
     },
     draw: function (s, slot, x, y, w, p) {
@@ -134,7 +134,7 @@
           var here = c.room === slot;
           var loc = c.room !== null && c.room !== undefined && s.slots[c.room] ? 'IN ' + D.ROOMS[s.slots[c.room].type].short : 'RESTING';
           var match = D.TRAITS[c.trait].room === r.type;
-          if (UI.button(x, y, w, 15, '', { style: here ? 'primary' : 'dark', id: 'pick:' + c.id })) {
+          if (UI.button(x, y, w, 19, '', { style: here ? 'primary' : 'dark', id: 'pick:' + c.id })) {
             if (here) Sim.assign(s, c.id, null);
             else {
               var occupants = Sim.crewIn(s, slot);
@@ -145,11 +145,11 @@
             p.data.pick = null;
             G().save();
           }
-          R.img(DH.Crew.sprites(c).headBig, x + 3, y + 2);
-          F.draw(R.ctx, c.name, x + 13, y + 2, 7, { font: 'small' });
-          F.draw(R.ctx, DH.Crew.traitName(c.trait), x + 13, y + 8, match ? 11 : 13, { font: 'small' });
-          F.draw(R.ctx, here ? 'TAP TO UNASSIGN' : loc, x + w - 3, y + 5, here ? 7 : 6, { font: 'small', align: 'right' });
-          y += 16;
+          R.img(DH.Crew.sprites(c).headBig, x + 3, y + 3);
+          F.draw(R.ctx, c.name, x + 13, y + 3, 7, { font: 'small' });
+          F.draw(R.ctx, DH.Crew.traitName(c.trait), x + 13, y + 9, match ? 11 : 13, { font: 'small' });
+          F.draw(R.ctx, here ? 'TAP TO UNASSIGN' : loc, x + w - 3, y + 6, here ? 7 : 6, { font: 'small', align: 'right' });
+          y += 20;
         });
         return;
       }
@@ -308,7 +308,7 @@
         if (have) { R.rect(cx + 9, cy + 5, 18, 10, h.main); R.rect(cx + 9, cy + 12, 18, 3, h.shade); R.rect(cx + 9, cy + 5, 18, 1, h.light); R.rect(cx + 12, cy + 8, 3, 2, 12); R.rect(cx + 17, cy + 8, 3, 2, 12); R.rect(cx + 22, cy + 9, 4, 1, h.trim); }
         else R.rect(cx + 9, cy + 5, 18, 10, 5);
       }
-      F.draw(R.ctx, have ? (kind === 'paint' ? D.PAINTS[id].name : D.HULLS[id].name) : '???', cx + (cell - 3) / 2, cy + 21, have ? 7 : 5, { font: 'small', align: 'center' });
+      F.draw(R.ctx, have ? (kind === 'paint' ? D.PAINTS[id].name : D.HULLS[id].name) : '???', cx + (cell - 3) / 2, cy + 21, have ? 7 : 1, { font: 'small', align: 'center' });
     });
     return Math.ceil(order.length / cols) * 34;
   }

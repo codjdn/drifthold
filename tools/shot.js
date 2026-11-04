@@ -9,7 +9,7 @@ const path = require('path');
   const errors = [];
   page.on('pageerror', e => errors.push('PAGEERROR ' + e.message));
   page.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.type() + ' ' + m.text()); });
-  await page.goto('file://' + path.join(__dirname, '..', 'index.html'));
+  await page.goto('file://' + path.join(__dirname, '..', 'index.html') + (process.env.Q || ''));
   await page.waitForTimeout(400);
   if (stepsFile) { const steps = require(path.resolve(stepsFile)); try { await steps(page); } catch (e) { console.log('STEP FAIL', e.message.split('\n')[0]); } }
   await page.screenshot({ path: out });

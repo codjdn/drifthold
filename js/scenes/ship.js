@@ -440,6 +440,7 @@
   Ship.update = function (dt) {
     var s = DH.G.state;
     V.t += dt;
+    if (UI.enabled && !DH.G.panel && !DH.G.trans && In.key(' ', 'l')) { DH.Snd.play('click'); DH.G.requestLaunch(); }
     Crew.update(s, dt, Ship.stations, V.t);
     Crew.post(s);
     // floating "+1" production popups

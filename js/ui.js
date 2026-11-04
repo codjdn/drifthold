@@ -94,7 +94,8 @@
     // content
     var cy = y + 1 + off + Math.floor((h - 4) / 2);
     var txtCol = opts.textCol !== undefined ? opts.textCol : st.text;
-    if (opts.selected && opts.style === 'tab') txtCol = 1;
+    var shadowCol = st.shadow;
+    if (opts.selected && opts.style === 'tab') { txtCol = 7; shadowCol = 2; }
     var font = opts.font || (h < 13 ? 'small' : 'big');
     var fh = font === 'small' ? 5 : 7;
     if (opts.icon && !label) {
@@ -107,7 +108,7 @@
       R.img(disabled ? DH.Spr.iconSil(opts.icon, 13) : ic2, sx, cy - Math.floor(ic2.height / 2));
       F.draw(R.ctx, label, sx + ic2.width + 3, cy - Math.floor(fh / 2), txtCol, { font: font, shadow: disabled ? null : st.shadow });
     } else if (label) {
-      F.draw(R.ctx, label, x + Math.floor(w / 2), cy - Math.floor(fh / 2), txtCol, { font: font, align: 'center', shadow: disabled ? null : st.shadow });
+      F.draw(R.ctx, label, x + Math.floor(w / 2), cy - Math.floor(fh / 2), txtCol, { font: font, align: 'center', shadow: disabled ? null : shadowCol });
     }
     if (clicked && !disabled) {
       if (DH.Snd) DH.Snd.play(opts.sound || 'click');
@@ -155,7 +156,8 @@
   // standard panel geometry for the current screen
   UI.panelRect = function (maxW, maxH) {
     var bar = DH.G && DH.G.barH !== undefined ? DH.G.barH : 26;
-    var w = Math.min(R.W - 8, maxW || 300), h = Math.min(R.H - bar - 10, maxH || 160);
+    var w = Math.min(R.W - 8, maxW || 300);
+    var h = Math.min(R.H - bar - 10, Math.round((maxH || 160) * (R.portrait ? 1.6 : 1)));
     return { x: Math.floor((R.W - w) / 2), y: Math.max(4, Math.floor((R.H - bar - h) / 2)), w: w, h: h };
   };
 

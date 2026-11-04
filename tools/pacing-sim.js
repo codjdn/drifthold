@@ -28,7 +28,8 @@ const rng = U.rng(42);
 function runYield(sector) {
   const st = Sim.droneStats(s);
   const units = 4.5;
-  const perAst = (units / st.chunk) * st.drillTime + 2.2 * (92 / st.speed);
+  // travel time per rock, fitted to bot playtests (magnet range shortens it)
+  const perAst = (units / st.chunk) * st.drillTime + 2.6 * Math.sqrt(10 / st.magnet) * (92 / st.speed);
   const rate = units / perAst * SKILL * (1 + st.luck);
   const mineTime = Math.min(st.fuel - 4, st.cargo / rate);
   const total = Math.min(st.cargo, Math.round(rate * mineTime));
