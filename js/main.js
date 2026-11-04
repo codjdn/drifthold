@@ -186,7 +186,7 @@
     UI.enabled = true;
     if (G.trans) UI.enabled = false;
     if (DH.Prog && s && G.sceneName !== 'title') DH.Prog.drawOverlay(dt);
-    UI.drawToasts(dt, G.sceneName === 'run' ? 30 : 14);
+    UI.drawToasts(dt, G.sceneName === 'run' ? 22 : 1);
 
     // dithered wipe between scenes
     if (G.trans) {

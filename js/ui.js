@@ -27,8 +27,10 @@
   };
   UI.STYLES = STYLES;
 
+  UI.hits = []; UI.prevHits = [];
   UI.begin = function (dt) {
     UI.t += dt;
+    UI.prevHits = UI.hits; UI.hits = [];
     if (In.pressed) UI.pressConsumed = false;
   };
   UI.end = function () {
@@ -46,6 +48,7 @@
   UI.hit = function (id, x, y, w, h, opts) {
     opts = opts || {};
     if (!UI.enabled && !opts.force) return false;
+    UI.hits.push({ id: id, x: x, y: y, w: w, h: h, clip: UI.clip });
     var clicked = false;
     if (In.pressed && !UI.pressConsumed && inside(In.px, In.py, x, y, w, h)) {
       UI.active = id;

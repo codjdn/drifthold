@@ -911,6 +911,10 @@
       F.drawOutlined(ctx, msg, R.W / 2, R.H - 24, S.endReason === 'shields' ? 8 : 10, 0, { align: 'center' });
     }
     if (S.phase === 'launch') F.drawOutlined(ctx, 'GO!', R.W / 2, R.H / 2 - 24, 10, 0, { align: 'center' });
+    if (S.t < 4 && S.sector.hazard && Math.floor(S.t * 3) % 4 !== 0) {
+      var hzName = { shards: 'SHARD SWARMS', comets: 'ICE COMETS', storm: 'MAGNETIC STORMS', whales: 'SPACE WHALES - GIVE THEM ROOM', wells: 'GRAVITY WELLS' }[S.sector.hazard];
+      F.drawOutlined(ctx, 'HAZARD: ' + hzName, R.W / 2, 30, 8, 0, { align: 'center', font: 'small' });
+    }
     // first-run hints
     if (S.firstRun && S.phase === 'play') {
       var hint = S.hint < 6 ? (In.hasTouch ? 'DRAG ANYWHERE TO STEER' : 'HOLD MOUSE OR USE WASD TO STEER') :
