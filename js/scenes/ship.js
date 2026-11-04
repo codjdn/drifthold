@@ -493,7 +493,8 @@
       x += w;
     });
     var stripH = y + rowH + 1;
-    R.dither(0, 0, R.W, stripH, 0);
+    R.rect(0, 0, R.W, stripH, 0);
+    R.rect(0, stripH, R.W, 1, 1);
     items.forEach(function (it) {
       R.img(Spr.icon(D.resIcon(it.k)), it.x, it.y);
       F.draw(R.ctx, it.txt, it.x + 8, it.y + 1, 7, { font: 'small', shadow: 0 });

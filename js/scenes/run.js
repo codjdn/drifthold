@@ -882,7 +882,9 @@
   function drawHUD() {
     var d = S.drone, ctx = R.ctx;
     // top strip
-    R.dither(0, 0, R.W, 19, 0);
+    // solid backing: a screen-anchored dither over the scrolling field shimmers
+    R.rect(0, 0, R.W, 19, 0);
+    R.rect(0, 19, R.W, 1, 1);
     // fuel
     R.img(Spr.icon('fuel'), 3, 3);
     var fw = Math.min(70, Math.floor(R.W * 0.25));
