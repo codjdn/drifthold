@@ -694,8 +694,7 @@
     var pdef = D.PLANETS[pid];
     var pf = Spr.planetFrame(pdef, 18, S.t * 0.01);
     var ppx = Math.round(R.W * 0.72 - cx * 0.04), ppy = Math.round(R.H * 0.18 - cy * 0.04);
-    R.img(pf, ppx, ppy);
-    R.dither(ppx, ppy, pf.width, pf.height, S.sector.bg);
+    R.img(Spr.dimmed(pf, S.sector.bg), ppx, ppy);
 
     // zone edge
     drawEdges(cx, cy);

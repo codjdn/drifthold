@@ -499,6 +499,18 @@
     for (var y = y0; y < R.H; y += h) for (var x = x0; x < R.W; x += w) (ctx || R.ctx).drawImage(neb, x, y);
   };
 
+  // a copy of a sprite with a checkerboard of `col` over its own pixels only (anchored to the
+  // sprite, so it doesn't shimmer when the sprite moves). Cached on the source canvas.
+  S.dimmed = function (src, col) {
+    var k = '_dim' + col;
+    if (src[k]) return src[k];
+    var c = R.makeCanvas(src.width, src.height);
+    c.x.drawImage(src, 0, 0);
+    c.x.globalCompositeOperation = 'source-atop';
+    R.dither(0, 0, src.width, src.height, col, c.x);
+    return (src[k] = c);
+  };
+
   DH.Spr = S;
 })(window.DH = window.DH || {});
 
