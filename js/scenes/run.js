@@ -34,8 +34,12 @@
       ast: [], chunks: [], pickups: [], parts: [], floats: [], hazards: [], warns: [], wells: [], whales: [],
       phase: 'launch', pt: 0, t: 0, hits: 0, cells: 0, endReason: null, fullT: 0,
       joy: null, hazardT: 5, storm: null, lowBeep: 0, firstRun: s.stats.runs === 0,
-      hint: 0, newOres: [], tally: null, mined: 0
+      hint: 0, newOres: [], tally: null, mined: 0,
+      combo: 0, comboT: 0, comboTier: 0, bestCombo: 0, comboBonus: 0, comboPop: 0,
+      crateAt: null, crateSpawned: false, crateGot: false, signalT: 0
     };
+    // some runs carry a salvage signal: a crate drifts in partway through
+    if (!S.firstRun && Math.random() < D.CRATE.chance) S.crateAt = rnd(8, 30);
     if (S.aid === 'glass') { S.drone.shields = S.drone.maxShields = 1; }
     if (S.aid === 'magstorm') S.drone.magnet = 9999;
     S.neb = Spr.makeNebula(256, 256, 30 + sector.id, sector.neb, sector.neb2);
@@ -137,6 +141,21 @@
     S.whales.push({ x: x, y: y, dir: dir, ph: Math.random() * 6, drop: 3, sang: 0 });
   }
 
+  function spawnCrate() {
+    S.crateSpawned = true;
+    var d = S.drone, p = null;
+    for (var k = 0; k < 40; k++) {
+      var a = Math.random() * Math.PI * 2, r = rnd(130, 210);
+      var x = d.x + Math.cos(a) * r, y = d.y + Math.sin(a) * r;
+      if (x > 30 && y > 30 && x < S.w - 30 && y < S.h - 30) { p = { x: x, y: y }; break; }
+    }
+    if (!p) p = farPoint(120);
+    var ang = Math.random() * Math.PI * 2;
+    S.pickups.push({ x: p.x, y: p.y, type: 'crate', t: 0, life: D.CRATE.life, vx: Math.cos(ang) * 6, vy: Math.sin(ang) * 6 });
+    S.signalT = 3.5;
+    Snd.play('crate');
+  }
+
   // ------------------------------------------------------------------ effects
   function burst(x, y, n, cols, speed, life) {
     for (var i = 0; i < n; i++) {
@@ -147,6 +166,34 @@
   }
   function floatText(x, y, txt, col, icon) {
     S.floats.push({ x: x, y: y, txt: txt, col: col, icon: icon, t: 0 });
+  }
+
+  // ------------------------------------------------------------------ combo chain
+  var COMBO_COLS = [7, 10, 9, 8, 14, 12, 11];
+  function comboCol(tier) { return COMBO_COLS[Math.min(COMBO_COLS.length - 1, tier)]; }
+  function comboAdd(n, ore) {
+    S.combo = S.comboT > 0 ? S.combo + n : n;
+    S.comboT = D.COMBO.window;
+    S.bestCombo = Math.max(S.bestCombo, S.combo);
+    var tier = Math.floor(S.combo / D.COMBO.step);
+    if (tier > S.comboTier) {
+      S.comboTier = tier;
+      var bonus = Math.min(D.COMBO.maxBonus, tier + 1);
+      // rare ores stay rare: chain bonuses pay out in the sector's everyday ores
+      if (D.ORES[ore].rare) ore = Object.keys(S.sector.ores).filter(function (k) { return !D.ORES[k].rare; })[0];
+      var got = addCargo(ore, bonus);
+      S.mined += got; S.comboBonus += got;
+      var d = S.drone;
+      floatText(d.x, d.y - 16, 'COMBO ' + S.combo + '!' + (got ? ' +' + got : ''), comboCol(tier));
+      Snd.play('combo', Math.min(12, tier * 2));
+      burst(d.x, d.y, 10 + tier * 3, [comboCol(tier), 7, 10], 55, 0.5);
+      R.addShake(1.5);
+      S.comboPop = 0.4;
+    }
+  }
+  function comboEnd(broken) {
+    if (S.combo >= 5 && broken) floatText(S.drone.x, S.drone.y - 16, 'CHAIN BROKEN', 13);
+    S.combo = 0; S.comboT = 0; S.comboTier = 0;
   }
 
   // ------------------------------------------------------------------ input -> steering vector
@@ -198,6 +245,7 @@
     if (d.inv > 0 || S.phase !== 'play') return;
     d.shields--;
     S.hits++;
+    comboEnd(true);
     d.inv = 1.3;
     d.flash = 0.25;
     d.vx = nx * power; d.vy = ny * power;
@@ -227,6 +275,7 @@
   function endRun(reason) {
     if (S.phase !== 'play') return;
     S.phase = 'return'; S.pt = 0; S.endReason = reason;
+    S.bestCombo = Math.max(S.bestCombo, S.combo);
     S.drone.contact = null;
     Snd.play('return');
     Snd.thrust(0);
@@ -330,6 +379,11 @@
         S.fullT += dt;
         if (S.fullT > 1.4) endRun('full');
       } else S.fullT = 0;
+      // the chain keeps going while you drill; it fades if you go too long without collecting
+      if (S.comboT > 0 && !d.contact) { S.comboT -= dt; if (S.comboT <= 0) comboEnd(false); }
+      S.comboPop = Math.max(0, S.comboPop - dt);
+      if (S.crateAt !== null && !S.crateSpawned && S.t >= S.crateAt) spawnCrate();
+      S.signalT = Math.max(0, S.signalT - dt);
       if (st.regen && d.shields < d.maxShields) {
         d.regen += dt;
         if (d.regen > 20) { d.regen = 0; d.shields++; Snd.play('shield'); floatText(d.x, d.y - 8, '+SHIELD', 12); }
@@ -446,9 +500,10 @@
         if (got > 0) {
           S.mined += got;
           c.n -= got;
-          Snd.play('pickup', D.ORE_ORDER.indexOf(c.ore));
+          Snd.play('pickup', D.ORE_ORDER.indexOf(c.ore) + Math.min(12, Math.floor(S.combo / 4)));
           floatText(d.x + rnd(-4, 4), d.y - 8, '+' + got, D.ORES[c.ore].cols[1]);
           if (c.n <= 0) c.dead = true;
+          if (S.phase === 'play') comboAdd(got, c.ore);
         }
       }
       if (c.t > c.life) c.dead = true;
@@ -459,6 +514,7 @@
     for (i = 0; i < S.pickups.length; i++) {
       var p = S.pickups[i];
       p.t += dt;
+      if (p.vx) { p.x += p.vx * dt; p.y += p.vy * dt; }
       if (p.life < 9999) { p.life -= dt; if (p.life <= 0) { p.dead = true; continue; } }
       if (S.phase !== 'play') continue;
       if (U.dist(p.x, p.y, d.x, d.y) < 8) {
@@ -469,6 +525,7 @@
         else if (p.type === 'magnet') { if (d.magnet < 9000) d.magnet = D.RUN.boostTime; floatText(p.x, p.y - 8, 'MAGNET!', 8); }
         else if (p.type === 'drill') { d.drillBoost = D.RUN.boostTime; floatText(p.x, p.y - 8, 'DRILL BOOST!', 9); }
         else if (p.type === 'shieldcell') { d.shields = Math.min(d.maxShields, d.shields + 1); floatText(p.x, p.y - 8, '+SHIELD', 12); }
+        else if (p.type === 'crate') { S.crateGot = true; S.signalT = 0; floatText(p.x, p.y - 8, 'SALVAGE CRATE!', 10); Snd.play('crate'); R.addShake(2); burst(p.x, p.y, 24, [10, 9, 7], 60, 0.7); }
         if (DH.Sim) Sim.emit('pickup', { type: p.type });
       }
     }
@@ -632,33 +689,84 @@
 
   // ------------------------------------------------------------------ tally
   function startTally() {
-    var s = S.s, d = S.drone;
+    var s = S.s, d = S.drone, P = DH.Prog;
     S.phase = 'tally'; S.pt = 0;
     Snd.thrust(0);
+    S.bestCombo = Math.max(S.bestCombo, S.combo);
     var haul = {};
     for (var k in d.cargo) if (d.cargo[k] > 0) haul[k] = d.cargo[k];
     var base = 0; for (k in haul) base += haul[k];
-    var bonus = {};
+    var bonus = {}, lines = [];
     var mult = 1;
+    function addBonus(frac, skipRare) {
+      var got = 0;
+      for (var o in haul) {
+        if (skipRare && D.ORES[o].rare) continue;
+        var e = Math.round(haul[o] * frac);
+        if (e > 0) { bonus[o] = (bonus[o] || 0) + e; got += e; }
+      }
+      return got;
+    }
+    if (S.comboBonus > 0) lines.push({ txt: 'BEST CHAIN X' + S.bestCombo + ': +' + S.comboBonus + ' BONUS ORE', col: 10 });
     if (S.anomaly) {
       mult = S.anomaly.mult;
-      for (k in haul) { var extra = Math.round(haul[k] * (mult - 1)); if (extra > 0) bonus[k] = extra; }
+      addBonus(mult - 1);
       bonus.dust = (bonus.dust || 0) + 3;
+      lines.push({ txt: 'ANOMALY BONUS X' + mult + ' +3 DUST', col: 14 });
+    }
+    if (P && !S.firstRun && base > 0 && P.dayBonusReady(s)) {
+      var g = addBonus(D.STREAK.firstRunBonus, true);
+      P.useDayBonus(s);
+      if (g > 0) lines.push({ txt: 'FIRST RUN TODAY: +' + g + ' ORE', col: 11 });
     }
     var finalHaul = {};
     for (k in haul) finalHaul[k] = haul[k];
     for (k in bonus) finalHaul[k] = (finalHaul[k] || 0) + bonus[k];
-    var prevBest = s.stats.bestHaul;
+    var prevBest = s.stats.bestHaul, prevCombo = s.stats.bestCombo || 0;
+    var xpBefore = { rank: s.rank || 1, xp: s.xp || 0, total: s.stats.xpTotal || 0 };
     var newOres = S.newOres.filter(function (o) { return !s.seen.ores[o]; });
     var total = Sim.applyRun(s, finalHaul, { hits: S.hits, cells: S.cells, reason: S.endReason, daily: !!S.anomaly, base: base });
     var reward = null;
-    if (S.anomaly && DH.Prog) reward = DH.Prog.completeDaily(s);
-    S.tally = {
+    if (S.anomaly && P) reward = P.completeDaily(s);
+    s.stats.bestCombo = Math.max(prevCombo, S.bestCombo);
+    var veteran = s.stats.runs > 1;
+    var T = S.tally = {
       haul: haul, bonus: bonus, mult: mult, total: total, base: base, keys: D.ORE_ORDER.filter(function (o) { return haul[o]; }),
-      shown: 0, t: 0, step: 0, done: false, best: total > prevBest && s.stats.runs > 1, newOres: newOres, reward: reward
+      shown: 0, t: 0, step: 0, done: false, newOres: newOres, reward: reward, lines: lines,
+      best: total > prevBest && veteran, prevBest: prevBest,
+      comboRecord: veteran && S.bestCombo > prevCombo && S.bestCombo >= D.COMBO.step,
+      crate: S.crateGot && P ? P.rollCrate(s) : null, crateT: 0, crateOpen: false,
+      xpBefore: xpBefore, xpShown: 0, xpTick: 0, rankSeen: xpBefore.rank
     };
+    // the lines under the total: discoveries, records and the "so close" nudge
+    var st = [];
+    if (newOres.length) st.push({ txt: '★ NEW ORE: ' + newOres.map(function (o) { return D.ORES[o].name; }).join(', '), col: 11 });
+    if (T.best) st.push({ txt: '★ NEW RECORD HAUL! (OLD BEST ' + prevBest + ')', col: 10, flash: true });
+    else if (veteran && prevBest > 0 && total === prevBest) st.push({ txt: '★ TIED YOUR BEST HAUL!', col: 10 });
+    else if (veteran && prevBest > 0 && total >= prevBest * 0.7) st.push({ txt: 'SO CLOSE! ' + (prevBest - total) + ' SHORT OF YOUR BEST (' + prevBest + ')', col: 9 });
+    else if (veteran && prevBest > 0) st.push({ txt: 'BEST HAUL TO BEAT: ' + prevBest, col: 13 });
+    if (T.comboRecord) st.push({ txt: '★ NEW CHAIN RECORD: X' + S.bestCombo, col: 10, flash: true });
+    if (reward) st.push({ txt: '★ ' + reward, col: 14 });
+    T.stars = st;
     DH.G.save();
     Snd.setMusic(null);
+  }
+  // rank and progress as if `add` XP had been gained since the run started
+  function xpView(T, add) {
+    var r = T.xpBefore.rank, x = T.xpBefore.xp + add, guard = 0;
+    while (x >= D.xpForRank(r) && guard++ < 50) { x -= D.xpForRank(r); r++; }
+    return { rank: r, xp: x, need: D.xpForRank(r) };
+  }
+  function openCrateNow() {
+    var T = S.tally;
+    if (!T.crate || T.crateOpen) return;
+    T.crateOpen = true;
+    DH.Prog.openCrate(S.s, T.crate);
+    var idx = { common: 0, rare: 1, epic: 2 }[T.crate.rarity];
+    Snd.play('reveal', idx);
+    R.addShake(2 + idx * 2);
+    T.revealT = 0;
+    DH.G.markDirty();
   }
   function updateTally(dt) {
     var T = S.tally;
@@ -675,7 +783,24 @@
         } else { T.done = true; Snd.play('jingle'); R.addShake(2); }
       }
       if (rows === 0 && !T.done) { T.done = true; Snd.play('jingle'); }
+    } else if (T.crate && !T.crateOpen) {
+      // the crate rattles for a moment before it pops
+      T.crateT += dt;
+      if (Math.floor(T.crateT * 9) !== Math.floor((T.crateT - dt) * 9)) Snd.play('rattle');
+      if (T.crateT > 1.2) openCrateNow();
+    } else {
+      // then the XP bar fills
+      var gained = (S.s.stats.xpTotal || 0) - T.xpBefore.total;
+      if (T.xpShown < gained) {
+        T.xpShown = Math.min(gained, T.xpShown + dt * Math.max(30, gained * 1.4));
+        T.xpTick += dt;
+        if (T.xpTick > 0.04) { T.xpTick = 0; Snd.play('blip'); }
+        var v = xpView(T, T.xpShown);
+        if (v.rank > T.rankSeen) { T.rankSeen = v.rank; T.rankPop = 1; R.addShake(3); }
+      }
     }
+    if (T.revealT !== undefined) T.revealT += dt;
+    if (T.rankPop) T.rankPop = Math.max(0, T.rankPop - dt);
     for (var i = 0; i < S.parts.length; i++) { var q = S.parts[i]; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; }
     S.parts = S.parts.filter(function (x) { return x.life > 0; });
     R.updateShake(dt);
@@ -721,7 +846,13 @@
       if (x < -10 || y < -10 || x > R.W + 10 || y > R.H + 10) return;
       if (p.life < 3 && Math.floor(p.t * 8) % 2) return;
       var sp = Spr.pickup(p.type);
-      if (Math.floor(p.t * 3) % 2) R.ring(x, y, 7, p.type === 'fuel' ? 10 : (p.type === 'magnet' ? 8 : (p.type === 'drill' ? 9 : 12)));
+      if (Math.floor(p.t * 3) % 2) R.ring(x, y, 7, p.type === 'fuel' || p.type === 'crate' ? 10 : (p.type === 'magnet' ? 8 : (p.type === 'drill' ? 9 : 12)));
+      if (p.type === 'crate') {
+        R.ring(x, y, 10 + Math.floor(p.t * 8) % 4, Math.floor(p.t * 6) % 2 ? 9 : 10);
+        var sa = p.t * 4;
+        R.pset(x + Math.cos(sa) * 9, y + Math.sin(sa) * 9, 7);
+        R.pset(x - Math.cos(sa) * 9, y - Math.sin(sa) * 9, 10);
+      }
       R.imgC(sp, x, y);
     });
     // asteroids
@@ -867,6 +998,9 @@
     // home arrow during return or when far away
     var d = S.drone;
     if (S.phase === 'return' || U.dist(d.x, d.y, S.home.x, S.home.y) > 200) edgeArrow(S.home.x, S.home.y, 11, 'SHIP', cx, cy);
+    if (S.phase === 'play') S.pickups.forEach(function (p) {
+      if (p.type === 'crate' && Math.floor(S.t * 4) % 3) edgeArrow(p.x, p.y, 10, 'CRATE', cx, cy);
+    });
     // ore sense research
     if (S.st.sense && S.phase === 'play') {
       var near = S.ast.filter(function (a) { return a.kind === 'ore'; }).sort(function (a, b) {
@@ -910,6 +1044,22 @@
     var bx = 12 + d.maxShields * 6 + 4;
     if (d.magnet > 0 && d.magnet < 9000) { R.img(Spr.icon('magnet'), bx, 11); F.draw(ctx, Math.ceil(d.magnet) + '', bx + 9, 12, 8, { font: 'small' }); bx += 20; }
     if (d.drillBoost > 0) { R.img(Spr.icon('drill'), bx, 11); F.draw(ctx, Math.ceil(d.drillBoost) + '', bx + 9, 12, 9, { font: 'small' }); bx += 20; }
+    if (S.crateGot) { R.img(Spr.pickup('crate'), bx, 10); bx += 11; }
+    // combo chain counter (right side, under the cargo bar)
+    if (S.combo >= 3 && S.phase === 'play') {
+      var tier = Math.floor(S.combo / D.COMBO.step), ccol = comboCol(tier);
+      var txt = 'X' + S.combo;
+      var big = S.comboPop > 0 ? 2 : 1;
+      var tw = F.measure(txt) * big;
+      var ry = 29;
+      if (big > 1) F.drawScaled(ctx, txt, R.W - 4 - tw, ry - 3, ccol, 2);
+      else F.drawOutlined(ctx, txt, R.W - 4, ry, ccol, 0, { align: 'right' });
+      F.drawOutlined(ctx, 'COMBO', R.W - 7 - tw, ry + 1, 6, 0, { font: 'small', align: 'right' });
+      var nextAt = (tier + 1) * D.COMBO.step;
+      UI.bar(R.W - 34, ry + 9 + (big > 1 ? 4 : 0), 30, 3, d.contact ? 1 : S.comboT / D.COMBO.window, ccol, 1);
+      F.drawOutlined(ctx, 'NEXT ' + nextAt, R.W - 4, ry + 14 + (big > 1 ? 4 : 0), 13, 0, { font: 'small', align: 'right' });
+    }
+    if (S.signalT > 0 && Math.floor(S.t * 5) % 3) F.drawOutlined(ctx, 'SALVAGE SIGNAL! FOLLOW THE ARROW', R.W / 2, R.H - 34, 10, 0, { align: 'center', font: 'small' });
     // per-ore counts
     var oy = 24;
     D.ORE_ORDER.forEach(function (o) {
@@ -957,48 +1107,99 @@
     }
   }
 
+  var RARITY = { common: { name: 'COMMON', col: 6 }, rare: { name: 'RARE!', col: 12 }, epic: { name: 'EPIC!!', col: 14 } };
+  function leaveTally(again) {
+    var T = S.tally;
+    openCrateNow();
+    if (again) {
+      if (DH.Prog) DH.Prog.afterRun({ total: T.total });
+      DH.G.launch(null);
+    } else DH.G.setScene('ship', { fromRun: { total: T.total, newOres: T.newOres, reason: S.endReason } });
+  }
   function drawTally(dt) {
-    var T = S.tally, ctx = R.ctx;
+    var T = S.tally, ctx = R.ctx, s = S.s;
     R.dim();
+    var rowH = 9, sl = 8;
+    var goal = DH.Prog ? DH.Prog.closestGoal(s) : null;
+    var stars = T.stars.slice();
+    var crateH = T.crate ? 11 + (T.crate.cosmetic ? 8 : 0) : 0;
     var rows = Math.max(1, T.keys.length);
-    var extra = (T.mult > 1 ? 1 : 0) + (T.newOres.length ? 1 : 0) + (T.best ? 1 : 0) + (T.reward ? 1 : 0);
-    var h = Math.min(R.H - 8, 58 + rows * 11 + extra * 10);
-    var w = Math.min(R.W - 8, 200);
+    function need() { return 16 + rows * rowH + 3 + T.lines.length * sl + 16 + stars.length * sl + crateH + 15 + (goal ? sl : 0) + 22; }
+    if (need() > R.H - 6) goal = null;
+    while (need() > R.H - 6 && stars.length > 1) stars.pop();
+    var h = Math.min(R.H - 6, need());
+    var w = Math.min(R.W - 8, 210);
     var x = Math.floor((R.W - w) / 2), y = Math.floor((R.H - h) / 2);
     var title = { fuel: 'RUN COMPLETE', full: 'FULL HOLD!', manual: 'RUN COMPLETE', shields: 'DRONE RECOVERED' }[S.endReason] || 'RUN COMPLETE';
     var c = UI.panelFrame(x, y, w, h, title, { icon: 'cargo', close: false });
-    var yy = c.y + 1;
+    var yy = c.y;
     // count-up rows: reveal the haul progressively
     var budget = T.shown;
-    if (!T.keys.length) { F.draw(ctx, 'NO ORE THIS TIME. NEXT RUN!', c.x + c.w / 2, yy + 2, 13, { align: 'center', font: 'small' }); yy += 11; }
+    if (!T.keys.length) { F.draw(ctx, 'NO ORE THIS TIME. NEXT RUN!', c.x + c.w / 2, yy + 2, 13, { align: 'center', font: 'small' }); yy += rowH; }
     T.keys.forEach(function (o) {
       var v = Math.min(T.haul[o], budget); budget -= v;
       R.img(Spr.icon(D.ORES[o].icon), c.x + 2, yy);
       F.draw(ctx, D.ORES[o].name, c.x + 12, yy, 6);
       F.draw(ctx, String(v), c.x + c.w - 2, yy, v === T.haul[o] ? 7 : 10, { align: 'right' });
-      yy += 11;
+      yy += rowH;
     });
     R.rect(c.x, yy, c.w, 1, 13); yy += 3;
-    if (T.mult > 1 && T.done) {
-      F.draw(ctx, 'ANOMALY BONUS X' + T.mult + ' +3 DUST', c.x + 2, yy, 14, { font: 'small' }); yy += 10;
-    }
+    T.lines.forEach(function (l) { if (T.done) F.draw(ctx, l.txt, c.x + 2, yy, l.col, { font: 'small' }); yy += sl; });
     F.draw(ctx, 'TOTAL', c.x + 2, yy + 1, 6);
     var tot = T.done ? T.total : T.shown;
-    F.drawScaled(ctx, String(tot), c.x + c.w - 2 - F.measure(String(tot)) * 2, yy - 2, T.done ? 10 : 7, 2);
+    F.drawScaled(ctx, String(tot), c.x + c.w - 2 - F.measure(String(tot)) * 2, yy - 2, T.done ? (T.best && Math.floor(T.t * 4) % 2 ? 7 : 10) : 7, 2);
     yy += 16;
-    if (T.done) {
-      if (T.newOres.length) { F.draw(ctx, '★ NEW ORE: ' + T.newOres.map(function (o) { return D.ORES[o].name; }).join(', '), c.x + 2, yy, 11, { font: 'small' }); yy += 10; }
-      if (T.best) { F.draw(ctx, '★ BEST HAUL YET!', c.x + 2, yy, 10, { font: 'small' }); yy += 10; }
-      if (T.reward) { F.draw(ctx, '★ ' + T.reward, c.x + 2, yy, 14, { font: 'small' }); yy += 10; }
-      if (Math.random() < 0.3) burst(S.cam.x + R.W / 2 + rnd(-w / 2, w / 2), S.cam.y + y, 1, [10, 7, 9], 30, 0.6);
-    }
-    var by = y + h - 18;
-    if (T.done) {
-      if (UI.button(c.x + c.w / 2 - 40, by, 80, 15, 'CONTINUE', { style: 'good', id: 'run:continue' }) || In.key('Enter', ' ')) {
-        DH.G.setScene('ship', { fromRun: { total: T.total, newOres: T.newOres, reason: S.endReason } });
+    stars.forEach(function (l) {
+      if (T.done && !(l.flash && Math.floor(T.t * 3) % 4 === 0)) F.draw(ctx, l.txt, c.x + 2, yy, l.col, { font: 'small' });
+      yy += sl;
+    });
+    // salvage crate
+    if (T.crate) {
+      if (T.done) {
+        var shake = !T.crateOpen ? Math.round(Math.sin(T.crateT * 40) * Math.min(2, T.crateT * 2)) : 0;
+        R.img(Spr.pickup('crate'), c.x + 1 + shake, yy - 1);
+        if (!T.crateOpen) F.draw(ctx, 'SALVAGE CRATE... ' + (Math.floor(T.crateT * 6) % 2 ? '?' : '!'), c.x + 13, yy + 1, 10, { font: 'small' });
+        else {
+          var rr = RARITY[T.crate.rarity];
+          var rc = T.crate.rarity === 'epic' && Math.floor(T.t * 6) % 2 ? 10 : rr.col;
+          F.draw(ctx, rr.name, c.x + 13, yy + 1, rc, { font: 'small' });
+          UI.costRow(c.x + 16 + F.measure(rr.name, 'small'), yy, T.crate.reward, null);
+          if (T.crate.cosmetic) F.draw(ctx, '★ ' + DH.Prog.cosmeticName(T.crate.cosmetic), c.x + 13, yy + 9, 14, { font: 'small' });
+          if (T.revealT < 0.6 && Math.random() < 0.6) burst(S.cam.x + c.x + 5, S.cam.y + yy + 3, 2, [rr.col, 7, 10], 50, 0.5);
+        }
       }
+      yy += crateH;
+    }
+    // pilot rank bar
+    if (T.done) {
+      var v = xpView(T, T.xpShown);
+      var pop = T.rankPop > 0 && Math.floor(T.t * 10) % 2;
+      F.draw(ctx, 'RANK ' + v.rank + ' ' + D.rankTitle(v.rank), c.x + 2, yy, pop ? 7 : 12, { font: 'small' });
+      F.draw(ctx, '+' + Math.round(T.xpShown) + ' XP', c.x + c.w - 2, yy, 11, { font: 'small', align: 'right' });
+      if (T.rankSeen > T.xpBefore.rank) F.draw(ctx, 'RANK UP!', c.x + c.w / 2 + 8, yy, Math.floor(T.t * 5) % 2 ? 10 : 9, { font: 'small', align: 'center' });
+      UI.bar(c.x + 2, yy + 7, c.w - 4, 4, v.xp / v.need, pop ? 7 : 12, 1);
+    }
+    yy += 15;
+    if (goal && T.done) {
+      var gt = 'NEXT GOAL: ' + DH.Prog.goalText(goal.g) + (goal.pr[1] > 1 ? ' ' + U.fmt(goal.pr[0]) + '/' + U.fmt(goal.pr[1]) : '');
+      while (F.measure(gt, 'small') > c.w - 4 && gt.length > 8) gt = gt.slice(0, -2);
+      F.draw(ctx, gt, c.x + 2, yy, goal.f >= 0.75 ? 11 : 13, { font: 'small' });
+    }
+    if (goal) yy += sl;
+    if (T.done && Math.random() < 0.3) burst(S.cam.x + R.W / 2 + rnd(-w / 2, w / 2), S.cam.y + y, 1, [10, 7, 9], 30, 0.6);
+    var by = y + h - 19;
+    var ready = T.done && (!T.crate || T.crateOpen);
+    var canAgain = s.unlocked.goals && s.stats.runs >= 3;
+    if (ready) {
+      if (canAgain) {
+        var bw = Math.floor((c.w - 6) / 2);
+        if (UI.button(c.x, by, bw, 15, 'SHIP', { style: 'primary', id: 'run:continue' }) || In.key('Enter', ' ')) { leaveTally(false); return; }
+        if (UI.button(c.x + bw + 6, by, bw, 15, 'AGAIN', { style: 'warm', icon: 'launch', id: 'run:again', sound: 'click' }) || In.key('l')) { leaveTally(true); return; }
+      } else if (UI.button(c.x + c.w / 2 - 40, by, 80, 15, 'CONTINUE', { style: 'good', id: 'run:continue' }) || In.key('Enter', ' ')) { leaveTally(false); return; }
     } else if (In.released || In.key('Enter', ' ')) {
-      T.shown = T.base; // tap to skip the count
+      // tap to skip ahead
+      if (!T.done) T.shown = T.base;
+      else if (T.crate && !T.crateOpen) openCrateNow();
     }
   }
 

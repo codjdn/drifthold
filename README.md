@@ -33,6 +33,9 @@ The game saves itself to `localStorage`. **SETUP → EXPORT** copies a save code
   13 research projects, plus drone paints, hull paints and room decorations.
 * At most 3 rotating goals at a time, a logbook with silhouettes for undiscovered entries, and a daily
   anomaly (one special run per day; missing a day costs nothing).
+* "One more run" systems: combo chains, salvage crates with rarity rolls, haul and chain records with
+  near-miss nudges, a pilot rank that levels up from everything you do, and a daily care package that
+  grows across the week (one missed day is forgiven). See "Engagement loops" in [DESIGN.md](DESIGN.md).
 * A custom 16-colour palette, two bitmap fonts drawn in code, and procedural planets, asteroids and crew.
   There are no image or font files anywhere.
 * Chiptune sound effects and soft generative music through the Web Audio API.

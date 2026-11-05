@@ -12,6 +12,24 @@ DRIFTHOLD has two loops that feed each other and feel deliberately opposite:
 
 A run can never fail. Broken shields trigger an automatic return with whatever cargo is left.
 
+## Engagement loops ("one more run")
+
+These systems sit on top of the two core loops. Each one targets a well-known reason players keep going,
+and none of them punish you for stopping.
+
+| System | Where | Why it works |
+|---|---|---|
+| **Combo chain** | run | Collecting ore without a long pause builds a chain (drilling keeps it alive, a hit breaks it). Every 10 in a chain pays bonus ore, the pickup sound climbs in pitch and the counter flashes. This is flow and mastery: routing well is rewarded on the spot. |
+| **Salvage crate** | run → tally | About 40% of runs (never the first) carry a salvage signal. A crate drifts in partway through, with an edge arrow. It rattles open in the tally: COMMON 64%, RARE 29%, EPIC 7% (EPIC can hold the NEBULA paint or hull, which only crates give). This is a variable reward with a short build-up. |
+| **Records & near-miss** | tally | Every tally names the haul to beat. Within 70% of it you get "SO CLOSE! N SHORT", and beating it shows NEW RECORD. The best chain is tracked too. A near-miss is one of the strongest "one more try" cues. |
+| **AGAIN button** | tally | Once goals are on (3+ runs), the tally offers SHIP and AGAIN (`L`). Getting back into the action quickly keeps the loop tight. |
+| **Next goal line** | tally | The tally shows the unfinished goal that is closest to done. An open loop is hard to walk away from (the Zeigarnik effect). |
+| **Pilot rank** | everywhere | XP for everything: 1 per ore brought home, plus goals, builds, upgrades, parts, recruits, research, crates and anomalies. Each rank pays an ore bundle, and ranks 3/6/10/15 unlock rank-only cosmetics (EMBER paint/hull, LEGEND paint, STARLIT hull). The ship HUD always shows a part-filled bar, and the tally fills it live. Players speed up as a goal gets close (the goal-gradient effect). Tap the bar for the rank & records panel. |
+| **Daily care package** | ship | The first visit each day opens a package that grows across a 7-day cycle (day 7 is the big one, with stardust). One missed day is forgiven, so the streak holds. The first run of each day also brings home +50% ore. This gives a reason to come back without a harsh streak. |
+
+All tuning lives in `data.js` (`D.XP`, `D.xpForRank`, `D.RANK_REWARDS`, `D.COMBO`, `D.CRATE*`, `D.STREAK`).
+There is still no real-money anything, no energy timers and no lose state.
+
 ## Architecture
 
 There are no frameworks, no build step and no ES modules: these are classic `<script>` files that share one
@@ -134,6 +152,12 @@ Timeline in game minutes:
 ```
 
 That matches the pacing sim: something new every 1–5 minutes, and the second sector at around 22 minutes.
+
+With the engagement loops on (chains, crates, rank rewards and the first-run-of-the-day bonus), the same bot
+reaches Sector 2 at about 14 minutes, hits rank 11 by minute 30 (a rank-up about every 3 minutes) and peaks at
+a ×60 chain. Rank rewards plus crates add about 15% to income. The rest comes from better runs (chain bonuses)
+and how upgrades compound. `pacing-sim.js` at 180 minutes ends in almost the same place as before, because the
+late game is gated by sector ores, not by ore volume.
 A human takes longer between runs than the bot does, so expect roughly 1.3–1.5x these times.
 
 ### Economy notes

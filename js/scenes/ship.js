@@ -441,6 +441,12 @@
     var s = DH.G.state;
     V.t += dt;
     if (UI.enabled && !DH.G.panel && !DH.G.trans && In.key(' ', 'l')) { DH.Snd.play('click'); DH.G.requestLaunch(); }
+    DH.G.rankFlash = Math.max(0, (DH.G.rankFlash || 0) - dt);
+    // the day's care package pops up once nothing else is on screen
+    if (DH.Prog && DH.Prog.giftPending(s) && !DH.G.panel && !DH.G.trans && !DH.G.pendingWelcome && !DH.Prog.blocking()) {
+      V.giftT = (V.giftT || 0) + dt;
+      if (V.giftT > 0.9) { V.giftT = 0; DH.G.openPanel('gift'); }
+    } else V.giftT = 0;
     Crew.update(s, dt, Ship.stations, V.t);
     Crew.post(s);
     // floating "+1" production popups
@@ -505,6 +511,17 @@
     var gy = stripH + 2;
     var sec = D.sector(s.sector);
     F.drawOutlined(R.ctx, sec.name, R.W - 3, gy, 13, 0, { font: 'small', align: 'right' });
+    if (s.unlocked.goals) {
+      // pilot rank: always a bar that is partly full
+      var rbw = 32, rbx = R.W - 3 - rbw, rby = gy + 8;
+      var flash = DH.G.rankFlash > 0 && Math.floor(V.t * 10) % 2;
+      var rk = 'RK ' + (s.rank || 1);
+      F.drawOutlined(R.ctx, rk, rbx - 3, rby, flash ? 7 : 12, 0, { font: 'small', align: 'right' });
+      UI.bar(rbx, rby, rbw, 5, (s.xp || 0) / Sim.xpNeed(s), flash ? 7 : 12, 1);
+      if (s.streak && s.streak.days >= 2) F.drawOutlined(R.ctx, '♥ DAY ' + s.streak.days, R.W - 3, rby + 8, 8, 0, { font: 'small', align: 'right' });
+      var rw = F.measure(rk, 'small') + rbw + 6;
+      if (UI.enabled && !DH.G.panel && UI.hit('ship:rank', R.W - rw - 2, rby - 2, rw + 2, 16)) { DH.Snd.play('tab'); DH.G.openPanel('rank'); }
+    }
     if (DH.Prog) gy = DH.Prog.drawGoals(3, gy);
     return gy + 2;
   }

@@ -124,6 +124,32 @@
       case 'blip': tone(NOTE(88), 0.03, { vol: 0.04 }); break;
       case 'spill': arp([NOTE(76), NOTE(72), NOTE(67)], 0.04, { vol: 0.06 }); break;
       case 'shield': arp([NOTE(64), NOTE(71)], 0.06, { vol: 0.07, type: 'triangle' }); break;
+      case 'combo':
+        // rises with the chain tier (p)
+        arp([NOTE(79 + (p || 0)), NOTE(83 + (p || 0)), NOTE(86 + (p || 0)), NOTE(91 + (p || 0))], 0.04, { vol: 0.07 });
+        tone(NOTE(67 + (p || 0)), 0.18, { type: 'triangle', vol: 0.08 });
+        break;
+      case 'rankup':
+        arp([NOTE(67), NOTE(72), NOTE(76), NOTE(79), NOTE(84)], 0.07, { vol: 0.08, len: 0.12 });
+        arp([NOTE(48), NOTE(55), NOTE(60), NOTE(64)], 0.14, { type: 'triangle', vol: 0.12, len: 0.3 });
+        tone(NOTE(88), 0.6, { delay: 0.42, vol: 0.07, type: 'triangle' });
+        tone(NOTE(91), 0.5, { delay: 0.5, vol: 0.05 });
+        break;
+      case 'crate':
+        tone(NOTE(84), 0.06, { vol: 0.06 }); tone(NOTE(91), 0.06, { delay: 0.08, vol: 0.06 }); tone(NOTE(96), 0.12, { delay: 0.16, vol: 0.05, type: 'triangle' });
+        break;
+      case 'rattle': noise(0.06, { filter: 'bandpass', freq: 900 + Math.random() * 400, vol: 0.12, q: 4 }); break;
+      case 'reveal':
+        // p: 0 common, 1 rare, 2 epic
+        if ((p || 0) >= 2) {
+          arp([NOTE(72), NOTE(76), NOTE(79), NOTE(84), NOTE(88), NOTE(91), NOTE(96)], 0.05, { vol: 0.08, len: 0.1 });
+          noise(0.6, { filter: 'highpass', freq: 5000, vol: 0.06, delay: 0.1 });
+          tone(NOTE(48), 0.6, { type: 'triangle', vol: 0.12 });
+        } else if (p === 1) {
+          arp([NOTE(72), NOTE(79), NOTE(84), NOTE(88)], 0.06, { vol: 0.08 });
+          tone(NOTE(55), 0.4, { type: 'triangle', vol: 0.1 });
+        } else arp([NOTE(72), NOTE(76), NOTE(79)], 0.06, { vol: 0.07 });
+        break;
       default: tone(600, 0.05, { vol: 0.05 });
     }
   };

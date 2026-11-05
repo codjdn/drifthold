@@ -15,6 +15,7 @@ module.exports = async (page) => {
     s.unlocked = { ship: true, launch: true, map: true, log: true, goals: true, daily: true };
     ['welcome', 'build1', 'map', 'visit', 'goals', 'expand', 'workshop', 'assign', 'log', 'food', 'daily', 'refinery', 'travel'].forEach(k => s.tut.done[k] = true);
     s.tut.done.logOpened = true; s.tut.done.dailySeen = true;
+    s.streak.claimed = DH.U.dayNumber(); // today's care package is tested in test-hooks.js
     localStorage.setItem('drifthold.save', JSON.stringify(s));
   });
   await page.reload();

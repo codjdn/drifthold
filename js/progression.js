@@ -294,6 +294,7 @@
         if (g.cosmetic) { Sim.grantUnlock(s, g.cosmetic); parts.push(cosmeticName(g.cosmetic)); }
         UI.toast('GOAL DONE! ' + parts.slice(0, 2).join(' '), 'check', 11);
         DH.Snd.play('goal');
+        Sim.addXp(s, D.XP.goal, 'goal');
         changed = true;
       }
     });
@@ -346,9 +347,102 @@
     s.daily.last = U.dayKey();
     s.daily.count++;
     s.stats.dailyDone++;
+    Sim.addXp(s, D.XP.daily, 'daily');
     var m = D.ANOMALY_MILESTONES[s.daily.count];
     if (m && !Sim.ownsUnlock(s, m)) { Sim.grantUnlock(s, m); return 'ANOMALY REWARD: ' + cosmeticName(m); }
     return 'DAILY ANOMALY #' + s.daily.count + ' DONE';
+  };
+
+  // ================================================================== daily voyage streak
+  // Coming back on consecutive days builds a streak (one missed day is forgiven). Each day's first
+  // visit opens a care package that grows through a 7-day cycle, and the first run of each day
+  // brings home extra ore.
+  Prog.giftPending = function (s) {
+    return !!s && s.stats.runs >= 2 && s.unlocked.goals && s.streak.claimed !== U.dayNumber();
+  };
+  // the streak day today's package would be (without claiming it)
+  Prog.streakPreview = function (s) {
+    var today = U.dayNumber(), st = s.streak;
+    if (st.claimed === today) return st.days;
+    if (st.lastDay === null || st.lastDay === undefined || today - st.lastDay > 1 + D.STREAK.grace) return 1;
+    return st.days + 1;
+  };
+  Prog.cycleDay = function (days) { return ((Math.max(1, days) - 1) % D.STREAK.cycle) + 1; };
+  Prog.giftFor = function (s, days) {
+    var cd = Prog.cycleDay(days);
+    var st = Sim.droneStats(s);
+    var amt = Math.max(10, Math.round(st.cargo * (0.35 + cd * 0.12)));
+    var ores = Object.keys(D.sector(s.sector).ores).filter(function (k) { return k !== 'dust'; });
+    var rw = {};
+    rw[ores[days % ores.length]] = amt;
+    if (ores.length > 1 && cd >= 2) rw[ores[(days + 1) % ores.length]] = Math.round(amt * 0.5);
+    if (cd >= 3 && Sim.findSlot(s, 'hydroponics') >= 0) rw.food = Math.round(amt * 0.6);
+    if (cd >= 4 && Sim.findSlot(s, 'refinery') >= 0) rw.alloy = Math.round(amt * 0.3);
+    if (cd >= 5 && (Sim.findSlot(s, 'lab') >= 0 || Sim.findSlot(s, 'observatory') >= 0)) rw.data = Math.round(amt * 0.4);
+    if (cd === D.STREAK.cycle) rw.dust = 2 + Math.min(3, Math.floor(days / D.STREAK.cycle));
+    return rw;
+  };
+  Prog.claimGift = function (s) {
+    if (s.streak.claimed === U.dayNumber()) return null;
+    var days = Prog.streakPreview(s);
+    var today = U.dayNumber();
+    var kept = s.streak.lastDay !== null && s.streak.lastDay !== undefined && today - s.streak.lastDay === 2;
+    s.streak.days = days;
+    s.streak.best = Math.max(s.streak.best || 0, days);
+    s.streak.lastDay = today;
+    s.streak.claimed = today;
+    var rw = Prog.giftFor(s, days);
+    Sim.give(s, rw, 'gift');
+    Sim.addXp(s, 10 + Prog.cycleDay(days) * 5, 'gift');
+    DH.G.markDirty();
+    return { days: days, reward: rw, graced: kept };
+  };
+  // first run of the calendar day gets a bonus (once the tutorial's first few runs are behind you)
+  Prog.dayBonusReady = function (s) { return s.stats.runs >= 2 && s.dayBonus !== U.dayNumber(); };
+  Prog.useDayBonus = function (s) { s.dayBonus = U.dayNumber(); };
+
+  // ================================================================== salvage crates
+  // a crate found on a run is opened in the tally. Most hold ore, some hold more.
+  Prog.rollCrate = function (s) {
+    var rarity = U.weighted(D.CRATE_RARITY);
+    var st = Sim.droneStats(s);
+    var base = Math.max(8, Math.round(st.cargo * 0.3));
+    var ores = Object.keys(D.sector(s.sector).ores).filter(function (k) { return k !== 'dust'; });
+    var rw = {}, cos = null;
+    var o1 = U.pick(ores), o2 = U.pick(ores);
+    rw[o1] = base;
+    if (rarity === 'rare' || rarity === 'epic') {
+      rw[o2] = (rw[o2] || 0) + Math.round(base * 0.8);
+      if (Sim.findSlot(s, 'refinery') >= 0) rw.alloy = Math.round(base * 0.4);
+      else if (Sim.findSlot(s, 'hydroponics') >= 0) rw.food = Math.round(base * 0.6);
+      if (Sim.findSlot(s, 'lab') >= 0 || Sim.findSlot(s, 'observatory') >= 0) rw.data = Math.round(base * 0.5);
+      if (rarity === 'epic') rw.dust = 3;
+      else if (Math.random() < 0.4) rw.dust = 1;
+    }
+    if (rarity === 'epic') {
+      for (var k in rw) if (k !== 'dust') rw[k] = Math.round(rw[k] * 1.8);
+      var left = D.CRATE_COSMETICS.filter(function (u) { return !Sim.ownsUnlock(s, u); });
+      if (left.length) cos = U.pick(left);
+    }
+    return { rarity: rarity, reward: rw, cosmetic: cos };
+  };
+  Prog.openCrate = function (s, crate) {
+    Sim.give(s, crate.reward, 'crate');
+    if (crate.cosmetic) Sim.grantUnlock(s, crate.cosmetic);
+    s.stats.crates = (s.stats.crates || 0) + 1;
+    Sim.addXp(s, D.XP.crate * (crate.rarity === 'epic' ? 3 : crate.rarity === 'rare' ? 2 : 1), 'crate');
+  };
+
+  // closest unfinished goal (for the "almost there" line after a run)
+  Prog.closestGoal = function (s) {
+    var best = null, bf = -1;
+    (s.goals || []).forEach(function (g) {
+      if (g.done) return;
+      var pr = Prog.goalProgress(s, g);
+      var f = pr[1] ? pr[0] / pr[1] : 0;
+      if (f > bf) { bf = f; best = { g: g, pr: pr, f: f }; }
+    });
+    return best;
   };
 
   // ================================================================== logbook helpers
@@ -381,6 +475,11 @@
       else if (type === 'unlock') { UI.toast('GOT: ' + cosmeticName(d.u), d.u.kind === 'room' ? 'room' : 'star', 10); DH.Snd.play('upgrade'); }
       else if (type === 'recruit') { DH.Snd.play('recruit'); UI.toast(d.crew.name + ' JOINED THE CREW!', 'crew', 11); }
       else if (type === 'build') { DH.Snd.play('build'); }
+      else if (type === 'rank') {
+        UI.toast('RANK UP! ' + d.rank + ' ' + D.rankTitle(d.rank), 'star', 10);
+        DH.Snd.play('rankup');
+        DH.G.rankFlash = 1.2;
+      }
       else if (type === 'travel') { s.tut.done.traveled = true; s.tut.done['went' + d.sector] = true; }
       else if (type === 'run') {
         s.goals.forEach(function (g) { if (g.type === 'haul' && !g.done) g.best = Math.max(g.best || 0, d.total); });
