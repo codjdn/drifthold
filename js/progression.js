@@ -403,8 +403,9 @@
 
   // ================================================================== salvage crates
   // a crate found on a run is opened in the tally. Most hold ore, some hold more.
-  Prog.rollCrate = function (s) {
+  Prog.rollCrate = function (s, minRarity) {
     var rarity = U.weighted(D.CRATE_RARITY);
+    if (minRarity === 'rare' && rarity === 'common') rarity = 'rare';
     var st = Sim.droneStats(s);
     var base = Math.max(8, Math.round(st.cargo * 0.3));
     var ores = Object.keys(D.sector(s.sector).ores).filter(function (k) { return k !== 'dust'; });

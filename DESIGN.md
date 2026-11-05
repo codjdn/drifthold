@@ -27,7 +27,21 @@ and none of them punish you for stopping.
 | **Pilot rank** | everywhere | XP for everything: 1 per ore brought home, plus goals, builds, upgrades, parts, recruits, research, crates and anomalies. Each rank pays an ore bundle, and ranks 3/6/10/15 unlock rank-only cosmetics (EMBER paint/hull, LEGEND paint, STARLIT hull). The ship HUD always shows a part-filled bar, and the tally fills it live. Players speed up as a goal gets close (the goal-gradient effect). Tap the bar for the rank & records panel. |
 | **Daily care package** | ship | The first visit each day opens a package that grows across a 7-day cycle (day 7 is the big one, with stardust). One missed day is forgiven, so the streak holds. The first run of each day also brings home +50% ore. This gives a reason to come back without a harsh streak. |
 
-All tuning lives in `data.js` (`D.XP`, `D.xpForRank`, `D.RANK_REWARDS`, `D.COMBO`, `D.CRATE*`, `D.STREAK`).
+### Run toys (the moment-to-moment fun)
+
+| Toy | How it plays |
+|---|---|
+| **Dash** | `Space`/`Shift` or a quick tap (aimed at the tap). A 0.26 s invulnerable burst on a 2.4 s cooldown. It smashes grey rocks up to r9 (chunky hit-stop, "POW!"), knocks a chunk out of ore rocks, and keeps the chain alive. Dodging becomes an active verb. |
+| **Star cores → perk draft** | From the 2nd run on, a core spawns 9–17 s in, and ore rocks can drop up to 2 more. Grabbing one pauses the run for a pick-1-of-3 from 11 perks (TWIN DRILL, MEGA MAGNET, AFTERBURNER, WRECKING BALL, CHAIN KEEPER, FUEL SIPPER, BULWARK, OVERCLOCK, RICH VEINS, SCAVENGER, SALVAGER). Each run builds differently. |
+| **Fever** | At a x30 chain (x15 with OVERCLOCK): banner, flashing border, a 160 bpm music track with hi-hats, double ore per chunk and a 1.6x magnet until the chain breaks. |
+| **Surprise events** | From the 3rd run, one per run at 16–30 s: ORE STORM (a wave of ore rocks sweeps across), GIANT GEODE (a 22-chunk rock of the sector's rarest everyday ore, with an arrow), FUEL BLOOM (a ring of fuel cells), DOUBLE TIME (x2 chunks for 10 s). |
+| **Juice** | Hit-stop on breaks and smashes, dash afterimages, white flashes on fever and geodes, queued banners. |
+| **Crew pokes** | Tap a crew member on the ship: they hop, chirp (pitch per person), and say a line for their trait. Poke them a lot and they get giggly. Sleepers wake up. |
+
+Cargo capacity still caps every run, so these make runs more exciting without inflating the economy much.
+The 15-minute bot playthrough unlocks things at the same times as before the toys were added.
+
+All tuning lives in `data.js` (`D.DASH`, `D.FEVER`, `D.PERKS`, `D.STARCORE`, `D.EVENTS`, `D.XP`, `D.xpForRank`, `D.RANK_REWARDS`, `D.COMBO`, `D.CRATE*`, `D.STREAK`).
 There is still no real-money anything, no energy timers and no lose state.
 
 ## Architecture

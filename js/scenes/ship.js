@@ -6,7 +6,7 @@
   var R = DH.R, F = DH.Font, In = DH.In, UI = DH.UI, U = DH.U, D = DH.D, Sim = DH.Sim, Spr = DH.Spr, Crew = DH.Crew;
   var CW = 44, CH = 32, IW = 42, IH = 30, FLOOR = 26;
   var Ship = { showBar: true };
-  var V = { stars: null, t: 0, floats: [], acc: {}, hullKey: '', hullCanvas: null, geom: null, building: {}, hover: -1 };
+  var V = { stars: null, t: 0, floats: [], acc: {}, hullKey: '', hullCanvas: null, geom: null, building: {}, hover: -1, hearts: [], says: [] };
   Ship.V = V;
 
   // grid layouts: slot index -> [col,row]. Slot 0 is always the bridge (front).
@@ -461,6 +461,7 @@
       if (V.building[i] > 0) V.building[i] -= dt;
     }
     V.floats = V.floats.filter(function (f) { f.t += dt; return f.t < 1.6; });
+    V.hearts = V.hearts.filter(function (h) { h.t += dt; h.x += h.vx * dt; h.y += h.vy * dt; h.vy += 30 * dt; return h.t < 1; });
   };
 
   function sectorBackdrop(s) {
@@ -528,6 +529,7 @@
 
   Ship.draw = function () {
     var s = DH.G.state, t = V.t;
+    V.says = [];
     sectorBackdrop(s);
     Ship.hudBottom = Ship.hudBottomCache || 36;
     var g = Ship.geometry(s);
@@ -563,7 +565,13 @@
       // crew in this room
       s.crew.forEach(function (c) {
         var a = Crew.actor(c);
-        if (a.slot === cell.slot) Crew.draw(c, ix, iy, iy + FLOOR, t);
+        if (a.slot !== cell.slot) return;
+        Crew.draw(c, ix, iy, iy + FLOOR, t);
+        if (a.rect && a.state !== 'door' && canClick && UI.hit('crew:' + c.id, a.rect.x, a.rect.y, a.rect.w, a.rect.h)) {
+          Crew.poke(c);
+          for (var hk = 0; hk < 6; hk++) V.hearts.push({ x: a.rect.x + a.rect.w / 2, y: a.rect.y, vx: U.rand(-14, 14), vy: U.rand(-30, -14), t: 0 });
+        }
+        if (a.say) V.says.push({ text: a.say.text, x: a.rect ? a.rect.x + a.rect.w / 2 : ix + a.x, y: a.rect ? a.rect.y - 20 : iy, t: a.say.t });
       });
       // build sparkle
       if (V.building[cell.slot] > 0) {
@@ -598,6 +606,17 @@
       var fx = cell.sx + IW - 12, fy = cell.sy + 8 - Math.floor(f.t * 8);
       R.img(Spr.icon(f.icon), fx, fy);
       F.drawOutlined(R.ctx, '+1', fx + 8, fy + 1, 7, 0, { font: 'small' });
+    });
+    // poked crew: hearts and speech
+    V.hearts.forEach(function (h) { if (h.t < 0.6 || Math.floor(h.t * 12) % 2) R.pset(h.x, h.y, h.t < 0.3 ? 14 : 8); });
+    V.says.forEach(function (sy) {
+      if (sy.t < 0.3 && Math.floor(sy.t * 20) % 2) return;
+      var tw = F.measure(sy.text, 'small') + 6;
+      var bx = Math.round(U.clamp(sy.x - tw / 2, 2, R.W - tw - 2)), by = Math.round(sy.y);
+      R.box(bx - 1, by - 1, tw + 2, 9, 0);
+      R.rect(bx, by, tw, 7, 7);
+      R.pset(Math.round(U.clamp(sy.x, bx + 2, bx + tw - 3)), by + 7, 7);
+      F.draw(R.ctx, sy.text, bx + 3, by + 1, 1, { font: 'small' });
     });
     var hb = drawHud(s);
     Ship.hudBottomCache = hb;

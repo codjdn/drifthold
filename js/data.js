@@ -311,6 +311,37 @@
   // one missed day is forgiven; the 7-day cycle repeats with day 7 the big one.
   D.STREAK = { grace: 1, cycle: 7, firstRunBonus: 0.5 };
 
+  // ------------------------------------------------------------------ dash, fever, perks, events (drone run)
+  // DASH: a short burst you aim with a quick tap/click or Space/Shift. It is invulnerable,
+  // smashes small grey rocks and knocks a chunk out of ore rocks.
+  D.DASH = { speed: 3.1, time: 0.26, cooldown: 2.4, grace: 0.14, smashR: 9 };
+  // FEVER: a long chain switches the run into overdrive until the chain breaks
+  D.FEVER = { at: 30, atOverclock: 15, magnet: 1.6 };
+  // star cores open a pick-1-of-3 perk draft that lasts for the rest of the run
+  D.PERKS = {
+    twin: { name: 'TWIN DRILL', icon: 'drill', desc: '+1 ORE FROM EVERY CHUNK.' },
+    megamag: { name: 'MEGA MAGNET', icon: 'magnet', desc: 'MAGNET RANGE X2.' },
+    afterburn: { name: 'AFTERBURNER', icon: 'speed', desc: 'DASH RECHARGES TWICE AS FAST.' },
+    wrecker: { name: 'WRECKING BALL', icon: 'bang', desc: 'DASH SMASHES ANY ROCK. SMASHED ROCKS DROP ORE.' },
+    keeper: { name: 'CHAIN KEEPER', icon: 'clock', desc: 'CHAINS LAST 75% LONGER.' },
+    sipper: { name: 'FUEL SIPPER', icon: 'fuel', desc: 'FUEL BURNS 30% SLOWER.' },
+    bulwark: { name: 'BULWARK', icon: 'shield', desc: '+2 SHIELDS, RIGHT NOW.' },
+    overclock: { name: 'OVERCLOCK', icon: 'star', desc: 'FEVER STARTS AT A X15 CHAIN.' },
+    rich: { name: 'RICH VEINS', icon: 'gold', desc: '25% OF CHUNKS COME OUT DOUBLE.' },
+    scavenger: { name: 'SCAVENGER', icon: 'plus', desc: 'PICKUPS FLOAT TO YOU. FUEL CELLS +50%.' },
+    salvager: { name: 'SALVAGER', icon: 'cargo', desc: 'A SALVAGE CRATE APPEARS. RARE OR BETTER.' }
+  };
+  D.PERK_ORDER = ['twin', 'megamag', 'afterburn', 'wrecker', 'keeper', 'sipper', 'bulwark', 'overclock', 'rich', 'scavenger', 'salvager'];
+  D.STARCORE = { first: [9, 17], dropChance: 0.05, max: 3 };
+  // one surprise per run (from the 3rd run on)
+  D.EVENTS = {
+    orestorm: { name: 'ORE STORM!', sub: 'ORE ROCKS INCOMING - GRAB THEM', w: 3 },
+    geode: { name: 'GIANT GEODE!', sub: 'A HUGE RICH ROCK HAS APPEARED', w: 3 },
+    bloom: { name: 'FUEL BLOOM!', sub: 'FUEL CELLS ALL AROUND YOU', w: 2 },
+    double: { name: 'DOUBLE TIME!', sub: 'EVERY CHUNK X2 FOR 10 SECONDS', w: 2 }
+  };
+  D.EVENT_AT = [16, 30];
+
   // ------------------------------------------------------------------ tuning for the drone run
   D.RUN = {
     baseFuel: 60, fuelPerPart: 2, baseDrill: 1.1, drillMult: 0.86, baseMagnet: 10, magnetPerPart: 5,
