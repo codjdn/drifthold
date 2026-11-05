@@ -41,6 +41,7 @@
       if (In.type === 'touch') In.hasTouch = true;
       In.x = In.px = p.x; In.y = In.py = p.y;
       In.down = true; In.pressed = true; In.drag = 0;
+      In.pressFrame = DH.G ? DH.G.frameCount : 0;
       cv.focus();
     }, { passive: false });
     cv.addEventListener('pointermove', function (e) {
@@ -76,7 +77,7 @@
 
     window.addEventListener('keydown', function (e) {
       var k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].indexOf(e.key) >= 0) e.preventDefault();
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Tab', 'PageUp', 'PageDown', 'Home', 'End'].indexOf(e.key) >= 0) e.preventDefault();
       if (DH.Snd) DH.Snd.unlock();
       if (!In.keys[k]) In.hit[k] = true;
       In.keys[k] = true;

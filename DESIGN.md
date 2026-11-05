@@ -37,11 +37,14 @@ and none of them punish you for stopping.
 | **Surprise events** | From the 3rd run, one per run at 16–30 s: ORE STORM (a wave of ore rocks sweeps across), GIANT GEODE (a 22-chunk rock of the sector's rarest everyday ore, with an arrow), FUEL BLOOM (a ring of fuel cells), DOUBLE TIME (x2 chunks for 10 s). |
 | **Juice** | Hit-stop on breaks and smashes, dash afterimages, white flashes on fever and geodes, queued banners. |
 | **Crew pokes** | Tap a crew member on the ship: they hop, chirp (pitch per person), and say a line for their trait. Poke them a lot and they get giggly. Sleepers wake up. |
+| **Bounties** | From the 2nd run, each run rolls one mini-challenge (never the same kind twice in a row): SMASH N GREY ROCKS, REACH A XN CHAIN, MINE N of the sector's main ore, GRAB N FUEL CELLS / POWER-UPS, NO BUMPS FOR NS, GRAB A STAR CORE, DASH INTO N ORE ROCKS. A banner announces it, the HUD tracks it, and finishing it gives +6 s fuel right away plus +25% everyday ore (at least 3) and 15 XP in the tally. A miss shows "BOUNTY MISSED (x/n)", which works as a near-miss nudge. Each one rewards a different verb, so runs feel different. |
+| **Nova bomb** | From the 4th run, about half of runs start with one somewhere in the field (edge arrow "NOVA"), and smashed rocks have a 3% chance to drop another (max 2 per run). Grabbing it sends out an 80 px shockwave that smashes every grey rock regardless of size, knocks 2 chunks out of ore rocks and wipes out shards and comets. |
+| **Flotsam** | On the ship, once goals are on, something drifts across the screen every 38–70 s: CARGO POD (sector ore), WISHING COMET (ore or a stardust, double XP), SPACE BOTTLE (a silly note plus food), SPACE JELLY (data; all crew hop and chatter). Tap it to collect. Missing one costs nothing. It gives the calm side a small "something's happening" moment. |
 
 Cargo capacity still caps every run, so these make runs more exciting without inflating the economy much.
 The 15-minute bot playthrough unlocks things at the same times as before the toys were added.
 
-All tuning lives in `data.js` (`D.DASH`, `D.FEVER`, `D.PERKS`, `D.STARCORE`, `D.EVENTS`, `D.XP`, `D.xpForRank`, `D.RANK_REWARDS`, `D.COMBO`, `D.CRATE*`, `D.STREAK`).
+All tuning lives in `data.js` (`D.BOUNTY`, `D.BOUNTIES`, `D.NOVA`, `D.FLOTSAM`, `D.DASH`, `D.FEVER`, `D.PERKS`, `D.STARCORE`, `D.EVENTS`, `D.XP`, `D.xpForRank`, `D.RANK_REWARDS`, `D.COMBO`, `D.CRATE*`, `D.STREAK`).
 There is still no real-money anything, no energy timers and no lose state.
 
 ## Architecture
@@ -79,6 +82,16 @@ js/roompanels.js      room panel (upgrade, crew, drone parts, research, chassis,
                       build, expand, hold
 js/main.js            boot, game loop, scene transitions, bottom bar, the one-panel rule, saving
 ```
+
+### Menu rules
+* One panel at a time. `Esc`, the red X, or a tap that starts and ends on the dimmed backdrop (not on the bottom
+  bar) closes it. Panels rise into place over 0.14 s.
+* A disabled buy button never fails silently: tapping it plays "nope" and toasts the shortfall
+  (`NEED 6 COPPER, 2 ICE MORE`, via `UI.shortfall`) or the reason (`WORKSHOP BUSY`, `NO FREE BEDS`).
+* `UI.tabs` takes an optional `badges` array; a tab with something affordable gets a blinking red `!`.
+  Arrow keys / `Tab` switch tabs, `[` `]` flip between rooms (also `◄` `►` in the room title bar).
+* Scroll areas glide after a swipe, respond to the wheel, arrows, PgUp/PgDn, Home/End, and show a `▼` while
+  there's more below. Desktop users get a hand cursor over anything clickable and key hints on the bottom bar.
 
 ### Rendering rules
 * Logical resolution is picked from the device-pixel size of the window. Landscape screens get at least

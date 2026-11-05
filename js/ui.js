@@ -29,12 +29,24 @@
 
   UI.hits = []; UI.prevHits = [];
   UI.begin = function (dt) {
-    UI.t += dt;
+    UI.t += dt; UI.dt = dt;
+    UI.keyTabUsed = false; UI.keyScrollUsed = false;
     UI.prevHits = UI.hits; UI.hits = [];
     if (In.pressed) UI.pressConsumed = false;
   };
   UI.end = function () {
     if (In.released || (!In.down && UI.active)) UI.active = null;
+    // desktop: show a hand cursor over anything you can click
+    var cv = R.canvas;
+    if (cv && In.type === 'mouse') {
+      var over = false;
+      for (var i = UI.hits.length - 1; i >= 0 && !over; i--) {
+        var h = UI.hits[i];
+        if (In.inRect(In.x, In.y, h.x, h.y, h.w, h.h) && (!h.clip || In.inRect(In.x, In.y, h.clip.x, h.clip.y, h.clip.w, h.clip.h))) over = true;
+      }
+      var cur = over ? 'pointer' : 'default';
+      if (UI._cursor !== cur) { UI._cursor = cur; cv.style.cursor = cur; }
+    }
   };
 
   function inside(x, y, rx, ry, rw, rh) {
@@ -114,8 +126,28 @@
       if (DH.Snd) DH.Snd.play(opts.sound || 'click');
       return true;
     }
-    if (clicked && disabled && DH.Snd) DH.Snd.play('nope');
+    if (clicked && disabled) {
+      if (DH.Snd) DH.Snd.play('nope');
+      var why = typeof opts.why === 'function' ? opts.why() : opts.why;
+      if (!why && opts.need) why = UI.shortfall(opts.need, DH.G && DH.G.state);
+      if (why) UI.toast(why, opts.whyIcon || (opts.need ? UI.shortIcon(opts.need, DH.G && DH.G.state) : 'lock'), 9);
+    }
     return false;
+  };
+
+  // "NEED 6 COPPER, 2 ICE" for a cost the player can't cover yet (null if they can)
+  UI.shortfall = function (cost, s) {
+    if (!cost || !s) return null;
+    var parts = [];
+    Object.keys(cost).forEach(function (k) {
+      var miss = cost[k] - Math.floor(s.res[k] || 0);
+      if (miss > 0) parts.push(U.fmt(miss) + ' ' + DH.D.resName(k));
+    });
+    return parts.length ? 'NEED ' + parts.join(', ') + ' MORE' : null;
+  };
+  UI.shortIcon = function (cost, s) {
+    var k = Object.keys(cost || {}).filter(function (k) { return s && (s.res[k] || 0) < cost[k]; })[0];
+    return k ? DH.D.resIcon(k) : null;
   };
 
   // small square icon button (close X etc.)
@@ -126,9 +158,12 @@
 
   // ------------------------------------------------------------------ panels
   // draws a panel frame and returns its inner content rect
+  UI.panelOffset = 0;
+  UI.lastPanel = null;
   UI.panelFrame = function (x, y, w, h, title, opts) {
     opts = opts || {};
-    x = Math.round(x); y = Math.round(y);
+    x = Math.round(x); y = Math.round(y) + (opts.anim === false ? 0 : UI.panelOffset);
+    UI.lastPanel = { x: x, y: y, w: w, h: h };
     R.box(x - 1, y - 1, w + 2, h + 2, 0);
     R.rect(x, y, w, h, 1);
     R.frame(x, y, w, h, 13);
@@ -161,30 +196,61 @@
     return { x: Math.floor((R.W - w) / 2), y: Math.max(4, Math.floor((R.H - bar - h) / 2)), w: w, h: h };
   };
 
-  // tab strip. returns selected index.
-  UI.tabs = function (id, x, y, w, labels, sel) {
+  // tab strip. returns selected index. badges[i] = true puts a blinking "!" on a tab that has
+  // something to do. Left/Right arrows (or Tab / Shift+Tab) switch tabs from the keyboard.
+  UI.tabs = function (id, x, y, w, labels, sel, badges) {
     var n = labels.length;
     var tw = Math.floor(w / n);
+    var start = sel;
     for (var i = 0; i < n; i++) {
       var on = i === sel;
-      if (UI.button(x + i * tw, y, tw - 1, 12, labels[i], { style: 'tab', selected: on, font: 'small', id: id + ':' + i })) sel = i;
+      if (UI.button(x + i * tw, y, tw - 1, 12, labels[i], { style: 'tab', selected: on, font: 'small', id: id + ':' + i, sound: 'tab' })) sel = i;
+      if (badges && badges[i] && !on) {
+        var bx = x + i * tw + tw - 7, by = y - 3, blink = Math.floor(UI.t * 3) % 2;
+        R.box(bx - 1, by - 1, 7, 9, 0);
+        R.rect(bx, by, 5, 7, blink ? 8 : 14);
+        R.rect(bx + 2, by + 1, 1, 3, 7); R.pset(bx + 2, by + 5, 7);
+      }
+    }
+    if (UI.enabled && !UI.keyTabUsed && n > 1 && sel === start) {
+      var dir = In.key('ArrowRight') || (In.key('Tab') && !In.held('Shift')) ? 1 : (In.key('ArrowLeft') || (In.key('Tab') && In.held('Shift')) ? -1 : 0);
+      if (dir) { UI.keyTabUsed = true; sel = (sel + dir + n) % n; if (DH.Snd) DH.Snd.play('tab'); }
     }
     return sel;
   };
 
   // ------------------------------------------------------------------ scroll area
   // calls drawFn(x, y0) where y0 already includes the scroll offset. Returns nothing.
+  UI.fling = {};          // scroll velocity (px/s) by id, for flick scrolling
   UI.scrollArea = function (id, x, y, w, h, contentH, drawFn) {
     var maxS = Math.max(0, contentH - h);
     var s = UI.scroll[id] || 0;
+    var dt = UI.dt || 1 / 60;
+    var v = UI.fling[id] || 0;
     var overArea = In.inRect(In.x, In.y, x, y, w, h);
-    if (overArea && In.wheel) s += In.wheel * 14;
+    if (overArea && In.wheel) { s += In.wheel * 18; v = 0; }
     if (In.down && In.inRect(In.px, In.py, x, y, w, h) && UI.enabled) {
-      if (UI._dragId !== id) { UI._dragId = id; UI._dragStart = s; UI._dragY = In.py; }
-      if (In.drag > 6) s = UI._dragStart - (In.y - UI._dragY);
-    } else if (UI._dragId === id && !In.down) UI._dragId = null;
+      if (UI._dragId !== id) { UI._dragId = id; UI._dragStart = s; UI._dragY = In.py; UI._dragLast = s; v = 0; }
+      if (In.drag > 6) {
+        s = UI._dragStart - (In.y - UI._dragY);
+        // smoothed finger speed, so letting go mid-swipe keeps the list gliding
+        v = v * 0.6 + ((s - UI._dragLast) / Math.max(dt, 0.001)) * 0.4;
+      }
+      UI._dragLast = s;
+    } else {
+      if (UI._dragId === id && !In.down) UI._dragId = null;
+      if (Math.abs(v) > 4) { s += v * dt; v *= Math.pow(0.03, dt); } else v = 0;
+    }
+    // keyboard: up/down, page up/down, home/end
+    if (UI.enabled && !UI.keyScrollUsed && maxS > 0) {
+      var ks = In.key('ArrowDown') ? 20 : In.key('ArrowUp') ? -20 : In.key('PageDown') ? h - 12 : In.key('PageUp') ? -(h - 12) : 0;
+      if (In.key('Home')) ks = -1e6; if (In.key('End')) ks = 1e6;
+      if (ks) { UI.keyScrollUsed = true; s += ks; v = 0; }
+    }
+    if (s <= 0 || s >= maxS) v = 0;
     s = U.clamp(s, 0, maxS);
     UI.scroll[id] = s;
+    UI.fling[id] = v;
     var ctx = R.ctx;
     ctx.save();
     ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
@@ -198,13 +264,16 @@
       var bh = Math.max(8, Math.floor(h * h / contentH));
       var by = y + Math.floor((h - bh) * (s / maxS));
       R.rect(x + w - 2, y, 2, h, 0);
-      R.rect(x + w - 2, by, 2, bh, 13);
-      // fade hints
-      if (s < maxS) { R.dither(x, y + h - 3, w - 3, 3, 1); }
+      R.rect(x + w - 2, by, 2, bh, UI._dragId === id || v ? 6 : 13);
+      // fade hints, plus a little "more below" arrow
+      if (s < maxS) {
+        R.dither(x, y + h - 3, w - 3, 3, 1);
+        if (s < 2) { var ay = y + h - 5 + (Math.floor(UI.t * 3) % 2); F.drawOutlined(ctx, '▼', x + w / 2, ay, 6, 0, { font: 'small', align: 'center' }); }
+      }
       if (s > 0) { R.dither(x, y, w - 3, 3, 1); }
     }
   };
-  UI.scrollTo = function (id, v) { UI.scroll[id] = v; };
+  UI.scrollTo = function (id, v) { UI.scroll[id] = v; UI.fling[id] = 0; };
 
   // ------------------------------------------------------------------ cost display
   // draws "icon num icon num", red where unaffordable. returns width.
@@ -272,7 +341,8 @@
       if (to.t > 2.6) { UI.toasts.splice(i, 1); i--; continue; }
       if (i >= 2) continue;
       var slide = to.t < 0.2 ? (1 - to.t / 0.2) : (to.t > 2.3 ? (to.t - 2.3) / 0.3 : 0);
-      var tw = F.measure(to.text, 'big') + (to.icon ? 12 : 0) + 10;
+      var tfont = F.measure(to.text, 'big') + (to.icon ? 12 : 0) + 10 > R.W - 4 ? 'small' : 'big';
+      var tw = Math.min(R.W - 4, F.measure(to.text, tfont) + (to.icon ? 12 : 0) + 10);
       var x = Math.floor((R.W - tw) / 2);
       var yy = Math.round(y - slide * 24);
       R.box(x, yy, tw, 13, 0);
@@ -280,7 +350,7 @@
       R.rect(x + 1, yy + 1, tw - 2, 1, 13);
       var tx = x + 5;
       if (to.icon) { R.img(DH.Spr.icon(to.icon), tx, yy + 3); tx += 11; }
-      F.draw(R.ctx, to.text, tx, yy + 3, to.col, { shadow: 0 });
+      F.draw(R.ctx, to.text, tx, yy + (tfont === 'small' ? 4 : 3), to.col, { shadow: 0, font: tfont });
       y += 15;
     }
   };

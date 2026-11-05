@@ -17,7 +17,7 @@
       stats: {
         runs: 0, mined: {}, bestHaul: 0, totalOre: 0, hits: 0, cells: 0, perfectRuns: 0,
         produced: { food: 0, alloy: 0, data: 0 }, playTime: 0, dailyDone: 0, recruited: 0, trades: 0,
-        upgrades: 0, builds: 0, partsBuilt: 0, bestCombo: 0, crates: 0, xpTotal: 0, smashed: 0, fevers: 0
+        upgrades: 0, builds: 0, partsBuilt: 0, bestCombo: 0, crates: 0, xpTotal: 0, smashed: 0, fevers: 0, bounties: 0, flotsam: 0
       },
       rank: 1, xp: 0,
       streak: { lastDay: null, days: 0, best: 0, claimed: null },

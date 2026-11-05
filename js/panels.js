@@ -313,7 +313,8 @@
         ['BEST HAUL', String(st.bestHaul || 0)], ['BEST CHAIN', 'X' + (st.bestCombo || 0)],
         ['CRATES OPENED', String(st.crates || 0)], ['DAY STREAK', (s.streak.days || 0) + ' (BEST ' + (s.streak.best || 0) + ')'],
         ['RUNS', String(st.runs)], ['ORE MINED', U.fmt(st.totalOre || 0)],
-        ['ROCKS SMASHED', U.fmt(st.smashed || 0)], ['FEVERS', String(st.fevers || 0)]
+        ['ROCKS SMASHED', U.fmt(st.smashed || 0)], ['FEVERS', String(st.fevers || 0)],
+        ['BOUNTIES', String(st.bounties || 0)], ['FLOTSAM CAUGHT', String(st.flotsam || 0)]
       ];
       var half = Math.floor(c.w / 2);
       recs.forEach(function (rc, i) {

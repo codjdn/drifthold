@@ -291,7 +291,7 @@
   // ------------------------------------------------------------------ pilot rank (XP from everything you do)
   // XP needed to go from rank r to r+1. Early ranks come every couple of runs, later ones stretch out.
   D.xpForRank = function (r) { return Math.round(30 + 22 * Math.pow(r, 1.35)); };
-  D.XP = { goal: 20, build: 25, upgrade: 20, part: 10, recruit: 15, research: 20, daily: 40, perfect: 10, crate: 10 };
+  D.XP = { goal: 20, build: 25, upgrade: 20, part: 10, recruit: 15, research: 20, daily: 40, perfect: 10, crate: 10, bounty: 15, flotsam: 4 };
   D.RANK_TITLES = ['CADET', 'DRIFTER', 'PROSPECTOR', 'ROCKHOPPER', 'VEINSEEKER', 'STARMINER', 'VOIDRUNNER', 'COMET RIDER', 'NEBULA ACE', 'DRIFT LEGEND'];
   D.rankTitle = function (r) { return D.RANK_TITLES[Math.min(D.RANK_TITLES.length - 1, Math.floor((r - 1) / 3))]; };
   // cosmetics that only rank-ups give out
@@ -341,6 +341,35 @@
     double: { name: 'DOUBLE TIME!', sub: 'EVERY CHUNK X2 FOR 10 SECONDS', w: 2 }
   };
   D.EVENT_AT = [16, 30];
+  // BOUNTIES: one small challenge per run (from the 2nd run on). Finishing it tops up fuel on the
+  // spot and pays bonus everyday ore in the tally, plus XP. {n} and {ore} are filled in per run.
+  D.BOUNTY = { bonus: 0.25, minBonus: 3, fuel: 6 };
+  D.BOUNTIES = {
+    smash: { w: 3, text: 'SMASH {n} GREY ROCKS', n: [3, 5] },
+    chain: { w: 3, text: 'REACH A X{n} CHAIN', n: [12, 20] },
+    mine: { w: 3, text: 'MINE {n} {ore}', frac: [0.3, 0.45] },
+    cells: { w: 2, text: 'GRAB {n} FUEL CELLS', n: [2, 2] },
+    boosts: { w: 2, text: 'GRAB {n} POWER-UPS', n: [2, 2] },
+    clean: { w: 2, text: 'NO BUMPS FOR {n}S', n: [20, 30] },
+    core: { w: 2, text: 'GRAB A STAR CORE', n: [1, 1] },
+    ram: { w: 2, text: 'DASH INTO {n} ORE ROCKS', n: [3, 5] }
+  };
+  // NOVA BOMB: a rare pickup (from the 4th run on). Grabbing it sends out a shockwave that smashes
+  // every grey rock nearby, knocks ore loose and wipes out shards and comets.
+  D.NOVA = { from: 3, chance: 0.5, radius: 80, time: 0.45, dropChance: 0.03, max: 2 };
+
+  // ------------------------------------------------------------------ flotsam (drifts past the ship; tap it)
+  // the idle side gets small tap-to-collect surprises. Gaps are long so it never feels like a chore.
+  D.FLOTSAM = { first: [14, 26], every: [38, 70], speed: [9, 15] };
+  D.FLOTSAM_KINDS = {
+    pod: { w: 40, name: 'CARGO POD' },
+    comet: { w: 22, name: 'WISHING COMET' },
+    bottle: { w: 22, name: 'SPACE BOTTLE' },
+    jelly: { w: 16, name: 'SPACE JELLY' }
+  };
+  D.BOTTLE_NOTES = ['"HAVE YOU TRIED TURNING THE STARS OFF AND ON?"', '"WHOEVER FINDS THIS: HI!"', '"THE COPPER IS ALWAYS SHINIER..."',
+    '"I LOST MY DRONE. IT WAS BLUE."', '"DRINK MORE SPACE WATER"', '"HELP, I AM STUCK IN A BOTTLE FACTORY"', '"THE WHALES ARE SINGING AGAIN"',
+    '"ROCKS ARE JUST SHY ORE"', '"GOOD JOB TODAY, CAPTAIN"', '"BRB, DRIFTING"'];
 
   // ------------------------------------------------------------------ tuning for the drone run
   D.RUN = {

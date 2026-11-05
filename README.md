@@ -22,8 +22,9 @@ from any static host (GitHub Pages and the like).
 | Drill | touch a coloured rock and hold still | same |
 | Dash (smashes small grey rocks, knocks ore loose) | `Space` / `Shift`, or a quick click aimed where you click | a quick tap aimed where you tap |
 | Pick a perk (star core) | click a card or `1`–`3` | tap a card |
-| Pause a run | `P` / `Esc` or the `II` button | `II` button (pauses automatically if you leave the app) |
+| Pause a run | `P` / `Esc` or the `II` button (`R` heads home from the pause menu) | `II` button (pauses automatically if you leave the app) |
 | Bottom bar | click, or keys `1`–`5`. `Space` / `L` launches | tap |
+| Panels | `Esc` or click outside to close. `←` `→` / `Tab` switch tabs, `[` `]` flip to the previous/next room, `↑` `↓` `PgUp` `PgDn` scroll | tap outside to close, swipe lists (they glide), `◄` `►` in a room's title bar |
 
 The game saves itself to `localStorage`. **SETUP → EXPORT** copies a save code you can paste into
 **IMPORT** on another device.
@@ -38,6 +39,11 @@ The game saves itself to `localStorage`. **SETUP → EXPORT** copies a save code
 * Run toys: a dash that smashes rocks, star cores that open a pick-1-of-3 perk draft (11 perks), FEVER mode
   on long chains (double ore, faster music), one surprise event per run (ore storm, giant geode, fuel bloom,
   double time), hit-stop and screen-flash juice. On the ship, tap your crew and they hop and talk back.
+* Easy menus: a red `!` on any tab with something you can afford, a toast that says exactly what you're
+  short when you tap a greyed-out button, room-to-room flipping, a pause menu (resume, head home, sound).
+* More toys: a **bounty** on every run (smash rocks, reach a chain, dash into ore, go bump-free...) that tops up
+  fuel on the spot and pays bonus ore; the **NOVA BOMB** pickup, whose shockwave smashes every rock around you;
+  and **flotsam** that drifts past the ship (cargo pods, wishing comets, bottles with notes, a space jelly) to tap.
 * "One more run" systems: combo chains, salvage crates with rarity rolls, haul and chain records with
   near-miss nudges, a pilot rank that levels up from everything you do, and a daily care package that
   grows across the week (one missed day is forgiven). See "Engagement loops" in [DESIGN.md](DESIGN.md).

@@ -148,7 +148,9 @@
       R.imgC(img, c.x + 14, c.y + 12);
       UI.para(pl.desc, c.x + 32, c.y + 2, c.w - 34, 6);
       var ty = c.y + 26;
-      var nt = UI.tabs('ptab', c.x, ty, c.w, ['CREW', 'TRADE', 'SHOP'], p.data.tab);
+      var canRecruit = Sim.level(s, 'quarters') > 0 && s.crew.length < Sim.bedCount(s) && Sim.canAfford(s, Sim.recruitCost(s));
+      var canShop = pl.unlocks.some(function (u) { return !Sim.ownsUnlock(s, u) && Sim.canAfford(s, u.cost); });
+      var nt = UI.tabs('ptab', c.x, ty, c.w, ['CREW', 'TRADE', 'SHOP'], p.data.tab, [canRecruit, false, canShop]);
       if (nt !== p.data.tab) { p.data.tab = nt; UI.scrollTo('planet', 0); }
       var area = { x: c.x, y: ty + 15, w: c.w, h: c.h - (ty + 15 - c.y) };
       var tab = [crewTab, tradeTab, shopTab][p.data.tab];
@@ -182,7 +184,7 @@
         UI.para(D.TRAITS[cand.trait].desc, bx + 22, y + 21, bw - 25, 13);
         var ok = !msg && Sim.canAfford(s, cost);
         UI.costRow(bx + 4, y + 47, cost, s);
-        if (UI.button(bx + 4, y + 57, bw - 8, 15, 'RECRUIT', { style: ok ? 'good' : 'off', disabled: !ok, id: 'rec:' + cand.id, sound: 'recruit' })) {
+        if (UI.button(bx + 4, y + 57, bw - 8, 15, 'RECRUIT', { style: ok ? 'good' : 'off', disabled: !ok, id: 'rec:' + cand.id, sound: 'recruit', need: msg ? null : cost, why: msg, whyIcon: 'crew' })) {
           if (Sim.recruit(s, cand)) DH.G.save();
         }
       });
@@ -200,7 +202,7 @@
         F.draw(R.ctx, '►', x + 10 + gw, y + 5, 10);
         UI.costRow(x + 20 + gw, y + 6, tr.get, null, { col: 11 });
         var ok = Sim.canAfford(s, tr.give);
-        if (UI.button(x + w - 44, y + 2, 42, 14, 'TRADE', { style: ok ? 'good' : 'off', disabled: !ok, id: 'tr:' + pl.id + i, font: 'small', sound: 'pickup' })) {
+        if (UI.button(x + w - 44, y + 2, 42, 14, 'TRADE', { style: ok ? 'good' : 'off', disabled: !ok, id: 'tr:' + pl.id + i, font: 'small', sound: 'pickup', need: tr.give })) {
           if (Sim.trade(s, tr)) { UI.toast('TRADED!', 'trade', 11); DH.G.markDirty(); }
         }
         y += 21;
@@ -224,7 +226,7 @@
         else {
           var ok = Sim.canAfford(s, u.cost);
           UI.costRow(x + 16, y + 10, u.cost, s);
-          if (UI.button(x + w - 46, y + 3, 44, 15, 'BUY', { style: ok ? 'good' : 'off', disabled: !ok, id: 'buy:' + u.id, sound: 'build' })) {
+          if (UI.button(x + w - 46, y + 3, 44, 15, 'BUY', { style: ok ? 'good' : 'off', disabled: !ok, id: 'buy:' + u.id, sound: 'build', need: u.cost })) {
             if (Sim.buyUnlock(s, u)) DH.G.save();
           }
         }

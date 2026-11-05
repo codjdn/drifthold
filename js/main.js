@@ -28,7 +28,7 @@
   G.openPanel = function (kind, data) {
     var P = DH.Panels[kind];
     if (!P) { console.warn('no panel', kind); return; }
-    G.panel = { kind: kind, data: data || {}, t: 0, view: P };
+    G.panel = { kind: kind, data: data || {}, t: 0, view: P, openedAt: G.frameCount };
     if (P.open) P.open(G.panel);
     if (DH.Prog) DH.Prog.onPanel(kind, G.panel.data);
   };
@@ -37,6 +37,15 @@
     G.panel = null;
   };
   G.isPanel = function (kind) { return G.panel && G.panel.kind === kind; };
+  // a tap that starts and ends on the dimmed backdrop (not on the bottom bar) closes the panel
+  G.tapOutside = function (pan, showBar) {
+    var r = UI.lastPanel;
+    if (!r || !UI.enabled || !In.released || In.drag > 6 || pan.view.modal) return false;
+    if (!(In.pressFrame >= pan.openedAt)) return false;
+    var barTop = showBar ? R.H - G.barH : R.H;
+    function out(x, y) { return y < barTop && !In.inRect(x, y, r.x - 2, r.y - 2, r.w + 4, r.h + 4); }
+    return out(In.px, In.py) && out(In.rx, In.ry);
+  };
 
   // ------------------------------------------------------------------ saving
   G.markDirty = function () { G.dirty = true; };
@@ -87,6 +96,7 @@
       var ic = DH.Spr.icon(b.icon);
       R.img(ic, x + Math.floor((bw - ic.width) / 2), by + 2 + off);
       F.draw(R.ctx, b.label, x + Math.floor(bw / 2), by + 12 + off, b.id === 'launch' ? 7 : (current ? 7 : 6), { font: 'small', align: 'center', shadow: st.shadow });
+      if (In.type === 'mouse' && bw >= 30) F.draw(R.ctx, b.key, x + 3, by + 2 + off, b.id === 'launch' ? 4 : 5, { font: 'small' });
       // "new" badge
       if (s.tut.seen['new:' + b.id] === false) {
         var on = Math.floor(G.time * 3) % 2;
@@ -177,10 +187,16 @@
     // panel (only one at a time)
     var showBar = G.scene && G.scene.showBar;
     if (G.panel) {
-      G.panel.t += dt;
+      var pan = G.panel;
+      pan.t += dt;
       R.dim();
-      var keep = G.panel.view.draw(G.panel, dt);
+      // quick pop-in: the panel rises a few pixels into place as it opens
+      UI.panelOffset = Math.round((1 - U.easeOutCubic(U.clamp(pan.t / 0.14, 0, 1))) * 10);
+      UI.lastPanel = null;
+      var keep = pan.view.draw(pan, dt);
+      UI.panelOffset = 0;
       if (keep === false || (UI.enabled && In.key('Escape'))) G.closePanel();
+      else if (G.panel === pan && G.tapOutside(pan, showBar)) { DH.Snd.play('back'); G.closePanel(); }
     }
     if (showBar && s) G.drawBar();
     ctx.restore();
@@ -188,7 +204,7 @@
     UI.enabled = true;
     if (G.trans) UI.enabled = false;
     if (DH.Prog && s && G.sceneName !== 'title') DH.Prog.drawOverlay(dt);
-    UI.drawToasts(dt, G.sceneName === 'run' ? 22 : 1);
+    UI.drawToasts(dt, G.sceneName === 'run' ? 31 : 1);
 
     // dithered wipe between scenes
     if (G.trans) {

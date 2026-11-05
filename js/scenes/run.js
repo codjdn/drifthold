@@ -39,13 +39,15 @@
       crateAt: null, crateSpawned: false, crateGot: false, signalT: 0, crateMin: null,
       dash: { t: -1, cd: 0, dx: 1, dy: 0, trail: [] }, pressAt: 0, smashed: 0, freeze: 0,
       fever: false, fevers: 0, perks: {}, perkList: [], cores: 0, coreAt: null, draft: null,
-      eventAt: null, event: null, banner: null, bannerQ: [], doubleT: 0, flashW: 0
+      eventAt: null, event: null, banner: null, bannerQ: [], doubleT: 0, flashW: 0,
+      bounty: null, lastHitT: 0, nova: null, novas: 0
     };
     var veteran = s.stats.runs >= 1;
     if (veteran) S.coreAt = rnd(D.STARCORE.first[0], D.STARCORE.first[1]);
     if (s.stats.runs >= 2) S.eventAt = rnd(D.EVENT_AT[0], D.EVENT_AT[1]);
     // some runs carry a salvage signal: a crate drifts in partway through
     if (!S.firstRun && Math.random() < D.CRATE.chance) S.crateAt = rnd(8, 30);
+    if (veteran) S.bounty = makeBounty(s, st);
     if (S.aid === 'glass') { S.drone.shields = S.drone.maxShields = 1; }
     if (S.aid === 'magstorm') S.drone.magnet = 9999;
     S.neb = Spr.makeNebula(256, 256, 30 + sector.id, sector.neb, sector.neb2);
@@ -68,6 +70,7 @@
     for (i = 0; i < cells; i++) spawnPickup('fuel');
     spawnPickup('magnet'); spawnPickup('drill');
     if (Math.random() < 0.5) spawnPickup('shieldcell');
+    if (s.stats.runs >= D.NOVA.from && Math.random() < D.NOVA.chance) { spawnPickup('nova'); S.novas++; }
     // sector hazards
     if (sector.hazard === 'wells') {
       for (i = 0; i < 3; i++) {
@@ -182,6 +185,7 @@
     S.comboT = D.COMBO.window * (S.perks.keeper ? 1.75 : 1);
     if (!S.fever && S.combo >= (S.perks.overclock ? D.FEVER.atOverclock : D.FEVER.at)) startFever();
     S.bestCombo = Math.max(S.bestCombo, S.combo);
+    bountyTick('chain', S.combo, true);
     var tier = Math.floor(S.combo / D.COMBO.step);
     if (tier > S.comboTier) {
       S.comboTier = tier;
@@ -240,14 +244,18 @@
     R.addShake(1.5);
     burst(S.drone.x, S.drone.y, 10, [7, 12, 6], 50, 0.35);
   }
-  function smashRock(a) {
+  function smashRock(a, byNova) {
     a.dead = true;
     S.smashed++;
+    bountyTick('smash', 1);
     burst(a.x, a.y, 16 + a.r * 2, [a.cols[0], a.cols[1], a.cols[2], 7], 70 + a.r * 4, 0.6);
-    R.addShake(a.r > 9 ? 5 : 3);
-    S.freeze = Math.max(S.freeze, a.r > 9 ? 0.07 : 0.045);
-    Snd.play('smash', Math.min(12, S.smashed % 8 * 2));
-    floatText(a.x, a.y - a.r - 4, U.pick(['SMASH!', 'POW!', 'CRUNCH!', 'BOOM!']), 7);
+    if (!byNova) {
+      R.addShake(a.r > 9 ? 5 : 3);
+      S.freeze = Math.max(S.freeze, a.r > 9 ? 0.07 : 0.045);
+      Snd.play('smash', Math.min(12, S.smashed % 8 * 2));
+      floatText(a.x, a.y - a.r - 4, U.pick(['SMASH!', 'POW!', 'CRUNCH!', 'BOOM!']), 7);
+      if (S.s.stats.runs >= D.NOVA.from && S.novas < D.NOVA.max && Math.random() < D.NOVA.dropChance) { spawnPickup('nova', a.x, a.y); S.novas++; }
+    }
     // a smash keeps the chain alive
     var ore = Object.keys(S.sector.ores).filter(function (k) { return !D.ORES[k].rare; })[0];
     if (S.comboT > 0) S.comboT = D.COMBO.window * (S.perks.keeper ? 1.75 : 1);
@@ -298,6 +306,73 @@
     Snd.play('upgrade');
     S.joy = null;
   };
+
+  // ------------------------------------------------------------------ bounties (one mini-challenge per run)
+  function makeBounty(s, st) {
+    var w = {};
+    for (var k in D.BOUNTIES) if (k !== s.lastBounty) w[k] = D.BOUNTIES[k].w;
+    var id = U.weighted(w), def = D.BOUNTIES[id];
+    var b = { id: id, n: 1, have: 0, done: false, ore: null, pop: 0 };
+    if (def.n) b.n = Math.round(rnd(def.n[0], def.n[1]));
+    if (id === 'mine') {
+      // the sector's most common everyday ore
+      var best = 'cu', bw = -1;
+      for (var o in S.sector.ores) if (!D.ORES[o].rare && S.sector.ores[o] > bw) { bw = S.sector.ores[o]; best = o; }
+      b.ore = best;
+      b.n = Math.max(6, Math.round(st.cargo * rnd(def.frac[0], def.frac[1])));
+    }
+    b.text = def.text.replace('{n}', b.n).replace('{ore}', b.ore ? D.ORES[b.ore].name : '');
+    s.lastBounty = id;
+    return b;
+  }
+  // count progress toward the bounty; `set` means v is an absolute value (e.g. the chain length)
+  function bountyTick(id, v, set) {
+    var b = S.bounty;
+    if (!b || b.done || b.id !== id || S.phase !== 'play') return;
+    var before = b.have;
+    b.have = set ? Math.max(b.have, v) : b.have + v;
+    if (b.have > before && id !== 'clean') b.pop = 0.3;
+    if (b.have < b.n) return;
+    b.have = b.n; b.done = true; b.doneT = S.t;
+    var d = S.drone;
+    d.fuel = Math.min(d.fuel + D.BOUNTY.fuel, d.maxFuel + 30);
+    showBanner({ txt: 'BOUNTY DONE!', sub: '+' + D.BOUNTY.fuel + 'S FUEL NOW, BONUS ORE AT HOME', t: 0, col: 11 });
+    floatText(d.x, d.y - 14, '+' + D.BOUNTY.fuel + 'S FUEL', 11);
+    Snd.play('goal');
+    R.addShake(2);
+    burst(d.x, d.y, 26, [11, 10, 7], 70, 0.6);
+  }
+
+  // ------------------------------------------------------------------ nova bomb
+  function startNova(x, y) {
+    S.nova = { x: x, y: y, t: 0 };
+    var d = S.drone;
+    d.inv = Math.max(d.inv, 0.7);
+    S.freeze = Math.max(S.freeze, 0.08);
+    S.flashW = 0.1;
+    R.addShake(7);
+    Snd.play('smash', 0); Snd.play('crack');
+    floatText(x, y - 12, 'NOVA!', 10);
+    burst(x, y, 50, [10, 9, 8, 7], 140, 0.7);
+  }
+  function updateNova(dt) {
+    var nv = S.nova;
+    if (!nv) return;
+    nv.t += dt;
+    var r = D.NOVA.radius * U.easeOutCubic(U.clamp(nv.t / D.NOVA.time, 0, 1));
+    nv.r = r;
+    for (var i = 0; i < S.ast.length; i++) {
+      var a = S.ast[i];
+      if (a.dead || a.novaHit || U.dist(a.x, a.y, nv.x, nv.y) > r + a.r) continue;
+      a.novaHit = true;
+      if (a.kind === 'rock') smashRock(a, true);
+      else { dropChunk(a); if (!a.geode) dropChunk(a); a.flash = 0.15; }
+    }
+    S.hazards.forEach(function (h) {
+      if (!h.dead && U.dist(h.x, h.y, nv.x, nv.y) < r) { h.dead = true; burst(h.x, h.y, 14, [7, 12, 6], 60, 0.4); }
+    });
+    if (nv.t > D.NOVA.time + 0.25) S.nova = null;
+  }
 
   // ------------------------------------------------------------------ surprise events
   function rarestOre() {
@@ -395,6 +470,7 @@
     if (d.inv > 0 || dashing() || S.phase !== 'play') return;
     d.shields--;
     S.hits++;
+    S.lastHitT = S.t;
     comboEnd(true);
     d.inv = 1.3;
     d.flash = 0.25;
@@ -486,8 +562,9 @@
     if (!S) return;
     if (S.phase === 'tally') { updateTally(dt); return; }
     if (S.paused) {
-      if (S.pauseT > 0.3 && (In.released || In.key('Escape', 'p', ' ', 'Enter'))) { S.paused = false; In.consume(); }
       S.pauseT = (S.pauseT || 0) + dt;
+      if (S.pauseT > 0.3 && In.key('Escape', 'p', ' ', 'Enter')) { S.paused = false; In.consume(); }
+      else if (S.pauseT > 0.3 && In.key('r')) { S.paused = false; endRun('manual'); }
       return;
     }
     if (S.draft) {
@@ -580,6 +657,9 @@
       var burn = (S.aid === 'frenzy' ? 2 : 1) * (S.perks.sipper ? 0.7 : 1);
       if (S.coreAt !== null && S.cores === 0 && S.t >= S.coreAt) spawnCore();
       if (S.eventAt !== null && !S.event && S.t >= S.eventAt) triggerEvent();
+      if (S.bounty && !S.bounty.shown && S.t > 0.6) { S.bounty.shown = true; showBanner({ txt: 'BOUNTY', sub: S.bounty.text, t: 0, col: 9 }); }
+      if (S.bounty && S.bounty.id === 'clean') bountyTick('clean', Math.floor(S.t - S.lastHitT), true);
+      if (S.bounty) S.bounty.pop = Math.max(0, S.bounty.pop - dt);
       updateEvent(dt);
       S.doubleT = Math.max(0, S.doubleT - dt);
       d.fuel -= dt * burn;
@@ -609,11 +689,13 @@
 
     // --- hazards
     updateHazards(dt);
+    updateNova(dt);
 
     // --- asteroids
     var contact = null, contactD = 1e9;
     for (var i = 0; i < S.ast.length; i++) {
       var a = S.ast[i];
+      if (a.dead) continue;
       a.x += a.vx * dt; a.y += a.vy * dt; a.rot += a.vr * dt;
       a.flash = Math.max(0, a.flash - dt);
       a.wob = Math.max(0, a.wob - dt);
@@ -638,6 +720,7 @@
           // ramming an ore rock knocks a chunk loose
           a.dashHit = S.t;
           dropChunk(a);
+          bountyTick('ram', 1);
           S.freeze = Math.max(S.freeze, 0.04);
           S.dash.t = Math.min(S.dash.t, 0.02);
         }
@@ -707,7 +790,7 @@
           Snd.play('pickup', D.ORE_ORDER.indexOf(c.ore) + Math.min(12, Math.floor(S.combo / 4)));
           floatText(d.x + rnd(-4, 4), d.y - 8, '+' + got, D.ORES[c.ore].cols[1]);
           if (c.n <= 0) c.dead = true;
-          if (S.phase === 'play') comboAdd(got, c.ore);
+          if (S.phase === 'play') { comboAdd(got, c.ore); if (S.bounty && c.ore === S.bounty.ore) bountyTick('mine', got); }
         }
       }
       if (c.t > c.life) c.dead = true;
@@ -730,12 +813,14 @@
         Snd.play('power');
         burst(p.x, p.y, 12, [7, 10, 12], 40, 0.5);
         var cell = Math.round(D.RUN.fuelCell * (S.perks.scavenger ? 1.5 : 1));
-        if (p.type === 'fuel') { d.fuel = Math.min(d.fuel + cell, d.maxFuel + 30); S.cells++; floatText(p.x, p.y - 8, '+' + cell + 'S FUEL', 10); }
-        else if (p.type === 'core') { floatText(p.x, p.y - 8, 'STAR CORE!', 14); R.addShake(2); burst(p.x, p.y, 30, [14, 7, 2], 70, 0.7); openDraft(); }
+        if (p.type === 'fuel') { d.fuel = Math.min(d.fuel + cell, d.maxFuel + 30); S.cells++; floatText(p.x, p.y - 8, '+' + cell + 'S FUEL', 10); bountyTick('cells', 1); }
+        else if (p.type === 'core') { floatText(p.x, p.y - 8, 'STAR CORE!', 14); R.addShake(2); burst(p.x, p.y, 30, [14, 7, 2], 70, 0.7); bountyTick('core', 1); openDraft(); }
+        else if (p.type === 'nova') startNova(p.x, p.y);
         else if (p.type === 'magnet') { if (d.magnet < 9000) d.magnet = D.RUN.boostTime; floatText(p.x, p.y - 8, 'MAGNET!', 8); }
         else if (p.type === 'drill') { d.drillBoost = D.RUN.boostTime; floatText(p.x, p.y - 8, 'DRILL BOOST!', 9); }
         else if (p.type === 'shieldcell') { d.shields = Math.min(d.maxShields, d.shields + 1); floatText(p.x, p.y - 8, '+SHIELD', 12); }
         else if (p.type === 'crate') { S.crateGot = true; S.signalT = 0; floatText(p.x, p.y - 8, 'SALVAGE CRATE!', 10); Snd.play('crate'); R.addShake(2); burst(p.x, p.y, 24, [10, 9, 7], 60, 0.7); }
+        if (p.type === 'magnet' || p.type === 'drill' || p.type === 'shieldcell' || p.type === 'nova') bountyTick('boosts', 1);
         if (DH.Sim) Sim.emit('pickup', { type: p.type });
       }
     }
@@ -926,8 +1011,8 @@
       return got;
     }
     if (S.comboBonus > 0) lines.push({ txt: 'BEST CHAIN X' + S.bestCombo + (S.fevers ? ' (FEVER!)' : '') + ': +' + S.comboBonus + ' BONUS ORE', col: 10 });
-    if (S.perkList.length) lines.push({ txt: 'PERKS: ' + S.perkList.map(function (id) { return D.PERKS[id].name; }).join(', '), col: 14 });
-    if (S.smashed) lines.push({ txt: 'SMASHED ' + S.smashed + ' ROCK' + (S.smashed > 1 ? 'S' : ''), col: 6 });
+    if (S.perkList.length) lines.push({ txt: 'PERKS: ' + S.perkList.map(function (id) { return D.PERKS[id].name; }).join(', '), col: 14, low: true });
+    if (S.smashed) lines.push({ txt: 'SMASHED ' + S.smashed + ' ROCK' + (S.smashed > 1 ? 'S' : ''), col: 6, low: true });
     s.stats.smashed = (s.stats.smashed || 0) + S.smashed;
     s.stats.fevers = (s.stats.fevers || 0) + S.fevers;
     if (S.anomaly) {
@@ -936,6 +1021,16 @@
       bonus.dust = (bonus.dust || 0) + 3;
       lines.push({ txt: 'ANOMALY BONUS X' + mult + ' +3 DUST', col: 14 });
     }
+    var bty = S.bounty;
+    if (bty && bty.done) {
+      var bg = addBonus(D.BOUNTY.bonus, true);
+      if (bg < D.BOUNTY.minBonus) {
+        var common = Object.keys(S.sector.ores).filter(function (k) { return !D.ORES[k].rare; })[0];
+        bonus[common] = (bonus[common] || 0) + (D.BOUNTY.minBonus - bg); bg = D.BOUNTY.minBonus;
+      }
+      lines.push({ txt: '★ BOUNTY DONE: +' + bg + ' BONUS ORE', col: 11 });
+      s.stats.bounties = (s.stats.bounties || 0) + 1;
+    } else if (bty) lines.push({ txt: 'BOUNTY MISSED: ' + bty.text + (bty.n > 1 ? ' (' + bty.have + '/' + bty.n + ')' : ''), col: 13 });
     if (P && !S.firstRun && base > 0 && P.dayBonusReady(s)) {
       var g = addBonus(D.STREAK.firstRunBonus, true);
       P.useDayBonus(s);
@@ -946,6 +1041,7 @@
     for (k in bonus) finalHaul[k] = (finalHaul[k] || 0) + bonus[k];
     var prevBest = s.stats.bestHaul, prevCombo = s.stats.bestCombo || 0;
     var xpBefore = { rank: s.rank || 1, xp: s.xp || 0, total: s.stats.xpTotal || 0 };
+    if (bty && bty.done) Sim.addXp(s, D.XP.bounty, 'bounty');
     var newOres = S.newOres.filter(function (o) { return !s.seen.ores[o]; });
     var total = Sim.applyRun(s, finalHaul, { hits: S.hits, cells: S.cells, reason: S.endReason, daily: !!S.anomaly, base: base });
     var reward = null;
@@ -1068,7 +1164,8 @@
       if (x < -10 || y < -10 || x > R.W + 10 || y > R.H + 10) return;
       if (p.life < 3 && Math.floor(p.t * 8) % 2) return;
       var sp = Spr.pickup(p.type);
-      if (Math.floor(p.t * 3) % 2) R.ring(x, y, 7, p.type === 'fuel' || p.type === 'crate' ? 10 : (p.type === 'magnet' ? 8 : (p.type === 'drill' ? 9 : (p.type === 'core' ? 14 : 12))));
+      if (Math.floor(p.t * 3) % 2) R.ring(x, y, 7, p.type === 'fuel' || p.type === 'crate' ? 10 : (p.type === 'magnet' ? 8 : (p.type === 'drill' || p.type === 'nova' ? 9 : (p.type === 'core' ? 14 : 12))));
+      if (p.type === 'nova') { var nk = Math.floor(p.t * 10) % 4; R.pset(x + 2, y - 5 - (nk % 2), nk < 2 ? 10 : 7); if (Math.floor(p.t * 5) % 2) R.ring(x, y, 10, 8); }
       if (p.type === 'core') {
         for (var ck = 0; ck < 4; ck++) { var ca = p.t * 2.5 + ck * 1.57; R.pset(x + Math.cos(ca) * 11, y + Math.sin(ca) * 11, ck % 2 ? 14 : 7); }
       }
@@ -1129,6 +1226,14 @@
       var img = Spr.whale(Math.floor(wh.ph * 1.5) % 2, wh.dir < 0);
       R.imgC(img, wh.x - cx, wh.y - cy);
     });
+    // nova shockwave
+    if (S.nova && S.nova.r) {
+      var nvx = S.nova.x - cx, nvy = S.nova.y - cy, nr = S.nova.r;
+      var fade = S.nova.t > D.NOVA.time;
+      R.ring(nvx, nvy, nr, fade ? 9 : 7);
+      if (nr > 3) R.ring(nvx, nvy, nr - 2, fade ? 4 : 10);
+      if (nr > 7 && !fade) R.ring(nvx, nvy, nr - 5, 9);
+    }
     // comets
     S.hazards.forEach(function (h) {
       R.circ(h.x - cx, h.y - cy, h.r, 12); R.circ(h.x - cx - 1, h.y - cy - 1, h.r - 2, 7);
@@ -1195,11 +1300,7 @@
     if (S.flashW > 0) R.dither(0, 0, R.W, R.H, 7);
     if (S.phase !== 'tally') { drawWarnings(cx, cy); drawHUD(); drawBanner(); }
     if (S.draft) drawDraft();
-    if (S.paused) {
-      R.dim();
-      F.drawOutlined(ctx, 'PAUSED', R.W / 2, R.H / 2 - 12, 10, 0, { align: 'center' });
-      F.drawOutlined(ctx, In.hasTouch ? 'TAP TO KEEP DRILLING' : 'CLICK OR PRESS P TO RESUME', R.W / 2, R.H / 2, 7, 0, { align: 'center', font: 'small' });
-    }
+    if (S.paused) drawPause();
     if (S.phase === 'tally') drawTally(dt);
   };
 
@@ -1242,6 +1343,7 @@
     if (S.phase === 'play') S.pickups.forEach(function (p) {
       if (p.type === 'crate' && Math.floor(S.t * 4) % 3) edgeArrow(p.x, p.y, 10, 'CRATE', cx, cy);
       if (p.type === 'core' && Math.floor(S.t * 4) % 3) edgeArrow(p.x, p.y, 14, 'CORE', cx, cy);
+      if (p.type === 'nova' && Math.floor(S.t * 4) % 3) edgeArrow(p.x, p.y, 9, 'NOVA', cx, cy);
     });
     if (S.phase === 'play' && S.geode && !S.geode.dead) edgeArrow(S.geode.x, S.geode.y, 10, 'GEODE', cx, cy);
     // ore sense research
@@ -1295,7 +1397,17 @@
       var pimg = Spr.icon(D.PERKS[S.perkList[pk]].icon);
       R.img(pimg, R.W - 72 - pk * 9, 11);
     }
-    if (S.doubleT > 0) F.drawOutlined(ctx, 'X2 ' + Math.ceil(S.doubleT) + 'S', R.W / 2, 22, Math.floor(S.t * 6) % 2 ? 10 : 9, 0, { align: 'center', font: 'small' });
+    var midY = 22;
+    // the run's bounty, top centre
+    var bn = S.bounty;
+    if (bn && (S.phase === 'play' || S.phase === 'launch') && (!bn.done || S.t - bn.doneT < 4)) {
+      var btxt = bn.done ? '✓ BOUNTY DONE!' : bn.text + (bn.n > 1 ? ' ' + bn.have + '/' + bn.n : '');
+      if (bn.id === 'clean' && !bn.done) btxt = bn.text + ' ' + bn.have + 'S';
+      var bcol = bn.done ? (Math.floor(S.t * 6) % 2 ? 11 : 7) : (bn.pop > 0 ? 7 : 9);
+      F.drawOutlined(ctx, (bn.done ? '' : '★ ') + btxt, R.W / 2, midY, bcol, 0, { align: 'center', font: 'small' });
+      midY += 7;
+    }
+    if (S.doubleT > 0) F.drawOutlined(ctx, 'X2 ' + Math.ceil(S.doubleT) + 'S', R.W / 2, midY, Math.floor(S.t * 6) % 2 ? 10 : 9, 0, { align: 'center', font: 'small' });
     // boosts
     if (d.magnet > 0 && d.magnet < 9000) { R.img(Spr.icon('magnet'), bx, 11); F.draw(ctx, Math.ceil(d.magnet) + '', bx + 9, 12, 8, { font: 'small' }); bx += 20; }
     if (d.drillBoost > 0) { R.img(Spr.icon('drill'), bx, 11); F.draw(ctx, Math.ceil(d.drillBoost) + '', bx + 9, 12, 9, { font: 'small' }); bx += 20; }
@@ -1326,10 +1438,10 @@
     if (S.anomaly) F.drawOutlined(ctx, S.anomaly.name, R.W / 2, 12, 14, 0, { font: 'small', align: 'center' });
     // return button
     var rb = RET_BTN();
-    if (S.phase === 'play') {
+    if (S.phase === 'play' && !S.paused) {
       var flash = full && Math.floor(S.t * 4) % 2;
       if (UI.button(rb.x + 15, 12, rb.w - 15, rb.h, 'RETURN', { style: flash ? 'good' : 'dark', font: 'small', id: 'run:return', sound: 'back' })) endRun('manual');
-      if (!S.paused && UI.button(rb.x, 12, 13, rb.h, 'II', { style: 'dark', font: 'small', id: 'run:pause', sound: 'tab' })) { S.paused = true; S.pauseT = 0; Snd.thrust(0); }
+      if (UI.button(rb.x, 12, 13, rb.h, 'II', { style: 'dark', font: 'small', id: 'run:pause', sound: 'tab' })) { S.paused = true; S.pauseT = 0; Snd.thrust(0); }
     }
     if (full && S.phase === 'play') F.drawOutlined(ctx, 'CARGO FULL! HEADING HOME', R.W / 2, R.H - 24, 11, 0, { align: 'center' });
     if (S.phase === 'return' || S.phase === 'dock') {
@@ -1368,6 +1480,33 @@
       R.circ(S.joy.x + kx, S.joy.y + ky, 4, 6);
       R.circ(S.joy.x + kx - 1, S.joy.y + ky - 1, 2, 7);
     }
+  }
+
+  function drawPause() {
+    var ctx = R.ctx, s = S.s;
+    R.dim();
+    var bw = Math.min(130, R.W - 30), bx = Math.floor((R.W - bw) / 2);
+    var y = Math.floor(R.H / 2) - 46;
+    F.drawOutlined(ctx, 'PAUSED', R.W / 2, y, 10, 0, { align: 'center' });
+    y += 11;
+    if (S.bounty) {
+      var bt = (S.bounty.done ? '✓ ' : 'BOUNTY: ') + S.bounty.text + (S.bounty.done || S.bounty.n < 2 ? '' : '  ' + S.bounty.have + '/' + S.bounty.n);
+      F.drawOutlined(ctx, bt, R.W / 2, y, S.bounty.done ? 11 : 9, 0, { align: 'center', font: 'small' });
+    }
+    y += 9;
+    var ready = S.pauseT > 0.3;
+    if (UI.button(bx, y, bw, 16, 'RESUME', { style: 'good', id: 'pause:resume', icon: 'launch' }) && ready) { S.paused = false; return; }
+    y += 19;
+    if (UI.button(bx, y, bw, 14, 'HEAD HOME WITH CARGO', { style: 'warm', font: 'small', id: 'pause:home', sound: 'back' }) && ready) { S.paused = false; endRun('manual'); return; }
+    y += 17;
+    var hw = Math.floor((bw - 3) / 2);
+    var sfx = s.settings.sfx !== false, mus = s.settings.music !== false;
+    if (UI.button(bx, y, hw, 14, 'SFX ' + (sfx ? 'ON' : 'OFF'), { style: sfx ? 'normal' : 'off', font: 'small', id: 'pause:sfx' })) { s.settings.sfx = !sfx; DH.Snd.setSfx(s.settings.sfx); DH.G.markDirty(); }
+    if (UI.button(bx + hw + 3, y, hw, 14, 'MUSIC ' + (mus ? 'ON' : 'OFF'), { style: mus ? 'normal' : 'off', font: 'small', id: 'pause:music' })) { s.settings.music = !mus; DH.Snd.setMusicOn(s.settings.music); DH.G.markDirty(); }
+    y += 19;
+    F.drawOutlined(ctx, In.type === 'mouse' && !In.hasTouch ? 'P / ESC RESUME   R HEAD HOME' : 'TAP OUTSIDE TO RESUME', R.W / 2, y, 13, 0, { align: 'center', font: 'small' });
+    // a tap that isn't on a button resumes
+    if (ready && In.released && !UI.pressConsumed) { S.paused = false; In.consume(); }
   }
 
   function drawBanner() {
@@ -1438,9 +1577,16 @@
     var stars = T.stars.slice();
     var crateH = T.crate ? 11 + (T.crate.cosmetic ? 8 : 0) : 0;
     var rows = Math.max(1, T.keys.length);
-    function need() { return 16 + rows * rowH + 3 + T.lines.length * sl + 16 + stars.length * sl + crateH + 15 + (goal ? sl : 0) + 22; }
+    var lines = T.lines.slice();
+    function need() { return 16 + rows * rowH + 3 + lines.length * sl + 16 + stars.length * sl + crateH + 15 + (goal ? sl : 0) + 22; }
     if (need() > R.H - 6) goal = null;
     while (need() > R.H - 6 && stars.length > 1) stars.pop();
+    while (need() > R.H - 6) {
+      var li = -1;
+      for (var lk = lines.length - 1; lk >= 0 && li < 0; lk--) if (lines[lk].low) li = lk;
+      if (li < 0) break;
+      lines.splice(li, 1);
+    }
     var h = Math.min(R.H - 6, need());
     var w = Math.min(R.W - 8, 210);
     var x = Math.floor((R.W - w) / 2), y = Math.floor((R.H - h) / 2);
@@ -1449,7 +1595,7 @@
     var yy = c.y;
     // count-up rows: reveal the haul progressively
     var budget = T.shown;
-    if (!T.keys.length) { F.draw(ctx, 'NO ORE THIS TIME. NEXT RUN!', c.x + c.w / 2, yy + 2, 13, { align: 'center', font: 'small' }); yy += rowH; }
+    if (!T.keys.length) { F.draw(ctx, T.total > 0 ? 'NO ORE MINED - BONUSES ONLY' : 'NO ORE THIS TIME. NEXT RUN!', c.x + c.w / 2, yy + 2, 13, { align: 'center', font: 'small' }); yy += rowH; }
     T.keys.forEach(function (o) {
       var v = Math.min(T.haul[o], budget); budget -= v;
       R.img(Spr.icon(D.ORES[o].icon), c.x + 2, yy);
@@ -1458,7 +1604,7 @@
       yy += rowH;
     });
     R.rect(c.x, yy, c.w, 1, 13); yy += 3;
-    T.lines.forEach(function (l) {
+    lines.forEach(function (l) {
       var lt = l.txt;
       while (F.measure(lt, 'small') > c.w - 4 && lt.length > 8) lt = lt.slice(0, -2);
       if (T.done) F.draw(ctx, lt, c.x + 2, yy, l.col, { font: 'small' });

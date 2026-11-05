@@ -13,13 +13,27 @@ async function clickL(page, lx, ly) {
   await page.mouse.up();
   await page.waitForTimeout(120);
 }
+// clicks a hit area by (part of) its id. Picks a point inside it that no other, smaller hit area
+// covers (so clicking a room doesn't poke the crew member standing in the middle of it).
 async function hit(page, idPart) {
   const r = await page.evaluate((idPart) => {
-    const h = DH.UI.prevHits.concat(DH.UI.hits).filter(x => x.id.indexOf(idPart) >= 0);
-    return h.length ? h[h.length - 1] : null;
+    const all = DH.UI.hits.length ? DH.UI.hits : DH.UI.prevHits;
+    const h = all.filter(x => x.id.indexOf(idPart) >= 0);
+    if (!h.length) return null;
+    const t = h[h.length - 1];
+    const others = all.filter(o => o !== t && o.id !== t.id && o.w * o.h < t.w * t.h);
+    const free = (x, y) => !others.some(o => x >= o.x && y >= o.y && x < o.x + o.w && y < o.y + o.h);
+    let p = { x: t.x + t.w / 2, y: t.y + t.h / 2 };
+    if (!free(p.x, p.y)) {
+      outer: for (let fy = 0.5; fy < 1; fy += 0.15) for (const sy of [1, -1]) for (let fx = 0.5; fx < 1; fx += 0.12) for (const sx of [1, -1]) {
+        const x = t.x + t.w * (0.5 + sx * (fx - 0.5)), y = t.y + t.h * (0.5 + sy * (fy - 0.5));
+        if (free(x, y)) { p = { x, y }; break outer; }
+      }
+    }
+    return Object.assign({}, t, { cx: p.x, cy: p.y });
   }, idPart);
   if (!r) throw new Error('no hit area ' + idPart);
-  await clickL(page, r.x + r.w / 2, r.y + r.h / 2);
+  await clickL(page, r.cx, r.cy);
   return r;
 }
 async function tapAnywhere(page) { await clickL(page, 10, 60); }

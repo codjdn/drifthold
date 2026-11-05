@@ -3,7 +3,7 @@
 // chassis & paint, decorations), building in an empty slot, hull expansion, the hold.
 (function (DH) {
   'use strict';
-  var R = DH.R, F = DH.Font, UI = DH.UI, U = DH.U, D = DH.D, Sim = DH.Sim, Spr = DH.Spr;
+  var R = DH.R, F = DH.Font, In = DH.In, UI = DH.UI, U = DH.U, D = DH.D, Sim = DH.Sim, Spr = DH.Spr;
   var P = DH.Panels;
   function G() { return DH.G; }
   function S() { return DH.G.state; }
@@ -46,6 +46,24 @@
   }
 
   // ------------------------------------------------------------------ room panel
+  // which tabs have something the player can do right now (shown as a "!" badge)
+  function tabBadges(s, slot, tabs) {
+    var r = s.slots[slot];
+    return tabs.map(function (name) {
+      switch (name) {
+        case 'ROOM': var c = Sim.upgradeCost(s, slot); return !!c && Sim.canAfford(s, c);
+        case 'DRONE': return !s.job && D.PART_ORDER.some(function (pt) { var pc = Sim.partNextCost(s, pt); return pc && s.parts[pt] < Sim.partCap(s) && Sim.canAfford(s, pc); });
+        case 'RESEARCH': var lab = Sim.level(s, 'lab'); return D.RESEARCH_ORDER.some(function (id) { var rs = D.RESEARCH[id]; return !s.research[id] && rs.tier <= lab && Sim.canAfford(s, rs.cost); });
+        case 'CHASSIS': var hl = Sim.level(s, 'hangar'); return D.CHASSIS_ORDER.some(function (id) { return !s.owned.chassis[id] && D.CHASSIS[id].lvl <= hl && Sim.canAfford(s, D.CHASSIS_COST[id]); });
+        case 'CREW': return Sim.crewIn(s, slot).length < D.crewSlots(r.lvl) && s.crew.some(function (c) { return c.room === null || c.room === undefined; });
+      }
+      return false;
+    });
+  }
+  P.roomBadges = tabBadges;
+  // built rooms in slot order, for flipping through them with the arrows
+  function builtSlots(s) { var out = []; s.slots.forEach(function (r, i) { if (r) out.push(i); }); return out; }
+
   P.room = {
     open: function (p) {
       var r = S().slots[p.data.slot];
@@ -55,15 +73,37 @@
       p.data.pick = null;
       UI.scrollTo('roompanel', 0);
     },
-    draw: function (p) {
+    // jump to the previous/next room, keeping the same tab when the new room has it
+    step: function (p, dir) {
+      var s = S(), list = builtSlots(s);
+      if (list.length < 2) return;
+      var i = list.indexOf(p.data.slot);
+      var keepName = p.data.tabs[p.data.tab];
+      p.data.slot = list[(i + dir + list.length) % list.length];
+      p.data.tabs = tabsFor(s.slots[p.data.slot].type);
+      var ti = p.data.tabs.indexOf(keepName);
+      p.data.tab = ti >= 0 ? ti : 0;
+      p.data.tabName = p.data.tabs[p.data.tab];
+      p.data.pick = null;
+      p.data.flipT = 0.12;
+      UI.scrollTo('roompanel', 0);
+      DH.Snd.play('tab');
+    },
+    draw: function (p, dt) {
       var s = S(), slot = p.data.slot, r = s.slots[slot];
       if (!r) return false;
       var def = D.ROOMS[r.type];
       var pr = UI.panelRect(300, 170);
       var c = UI.panelFrame(pr.x, pr.y, pr.w, pr.h, def.name + '  LV' + r.lvl, { icon: 'room' });
       if (c.closed) return false;
+      // ◄ ► flip between rooms without closing the panel ([ and ] on a keyboard)
+      if (builtSlots(s).length > 1) {
+        var nx = c.px + c.pw - 13, ny = c.py + 1;
+        if (UI.button(nx - 27, ny, 12, 12, '◄', { style: 'dark', font: 'small', id: 'room:prev', sound: 'tab' }) || (UI.enabled && In.key('['))) { P.room.step(p, -1); return true; }
+        if (UI.button(nx - 14, ny, 12, 12, '►', { style: 'dark', font: 'small', id: 'room:next', sound: 'tab' }) || (UI.enabled && In.key(']'))) { P.room.step(p, 1); return true; }
+      }
       var tabs = p.data.tabs;
-      var nt = UI.tabs('rtab', c.x, c.y, c.w, tabs, p.data.tab);
+      var nt = UI.tabs('rtab', c.x, c.y, c.w, tabs, p.data.tab, tabBadges(s, slot, tabs));
       if (nt !== p.data.tab) { p.data.tab = nt; p.data.pick = null; UI.scrollTo('roompanel', 0); }
       var name = tabs[p.data.tab];
       p.data.tabName = name;
@@ -71,6 +111,7 @@
       var fn = TABS[name];
       var hgt = fn.height ? fn.height(s, slot, area.w - 4, p) : area.h;
       UI.scrollArea('roompanel', area.x, area.y, area.w, area.h, hgt, function (x, y) { fn.draw(s, slot, x, y, area.w - 4, p); });
+      if (p.data.flipT > 0) { p.data.flipT -= dt || 0.016; R.dither(area.x, area.y, area.w, area.h, 1); }
       return true;
     }
   };
@@ -105,7 +146,7 @@
         y += nxt.length * 7 + 4;
         var ok = Sim.canAfford(s, cost);
         UI.costRow(x, y + 3, cost, s);
-        if (UI.button(x + w - 64, y, 64, 14, 'UPGRADE', { style: ok ? 'good' : 'off', id: 'up:' + slot, sound: 'upgrade', disabled: !ok })) {
+        if (UI.button(x + w - 64, y, 64, 14, 'UPGRADE', { style: ok ? 'good' : 'off', id: 'up:' + slot, sound: 'upgrade', disabled: !ok, need: cost })) {
           if (Sim.upgrade(s, slot)) {
             DH.ShipView.build(slot);
             UI.toast(D.ROOMS[r.type].name + ' LV' + r.lvl + '!', 'up', 11);
@@ -226,7 +267,8 @@
           var cw = UI.costWidth(cost);
           UI.costRow(bx - cw - 4, y + 6, cost, s);
           var ok = !s.job && Sim.canAfford(s, cost);
-          if (UI.button(bx, y + 2, 42, 14, s.job ? 'BUSY' : 'BUILD', { style: ok ? 'good' : 'off', disabled: !ok, id: 'part:' + part, font: 'small', sound: 'build' })) {
+          var busy = s.job ? 'WORKSHOP BUSY: ' + D.PARTS[s.job.part].name + ' LV' + s.job.lvl : null;
+          if (UI.button(bx, y + 2, 42, 14, s.job ? 'BUSY' : 'BUILD', { style: ok ? 'good' : 'off', disabled: !ok, id: 'part:' + part, font: 'small', sound: 'build', need: cost, why: busy, whyIcon: busy ? 'clock' : null })) {
             if (Sim.startPart(s, part)) { UI.toast('BUILDING ' + info.name + '...', info.icon, 10); G().save(); }
           }
         }
@@ -251,7 +293,7 @@
         else if (!locked) {
           var ok = Sim.canAfford(s, rs.cost);
           UI.costRow(x + w - 46 - UI.costWidth(rs.cost) - 4, y + 3, rs.cost, s);
-          if (UI.button(x + w - 46, y + 5, 44, 14, 'STUDY', { style: ok ? 'good' : 'off', disabled: !ok, font: 'small', id: 'rs:' + id, sound: 'upgrade' })) {
+          if (UI.button(x + w - 46, y + 5, 44, 14, 'STUDY', { style: ok ? 'good' : 'off', disabled: !ok, font: 'small', id: 'rs:' + id, sound: 'upgrade', need: rs.cost })) {
             if (Sim.doResearch(s, id)) { UI.toast('RESEARCHED ' + rs.name, 'research', 11); G().save(); }
           }
         }
@@ -277,7 +319,7 @@
         else if (!locked) {
           var cost = D.CHASSIS_COST[id], ok = Sim.canAfford(s, cost);
           UI.costRow(bx - UI.costWidth(cost) - 4, y + 7, cost, s);
-          if (UI.button(bx, y + 3, 44, 14, 'BUY', { style: ok ? 'good' : 'off', disabled: !ok, font: 'small', id: 'chb:' + id, sound: 'build' })) {
+          if (UI.button(bx, y + 3, 44, 14, 'BUY', { style: ok ? 'good' : 'off', disabled: !ok, font: 'small', id: 'chb:' + id, sound: 'build', need: cost })) {
             if (Sim.buyChassis(s, id)) { s.chassis = id; UI.toast(ch.name + ' CHASSIS!', 'launch', 11); G().save(); }
           }
         }
@@ -295,7 +337,7 @@
     order.forEach(function (id, i) {
       var cx = x + (i % cols) * cell, cy = y + Math.floor(i / cols) * 34;
       var have = !!owned[id];
-      if (UI.button(cx, cy, cell - 3, 31, '', { style: id === cur ? 'primary' : 'dark', id: 'sw:' + kind + id, disabled: !have })) {
+      if (UI.button(cx, cy, cell - 3, 31, '', { style: id === cur ? 'primary' : 'dark', id: 'sw:' + kind + id, disabled: !have, why: kind === 'paint' ? 'FIND PAINTS ON PLANETS, CRATES & RANKS' : 'FIND HULL PAINTS ON PLANETS & RANKS' })) {
         if (kind === 'paint') s.paint = id; else s.hullColor = id;
         G().save();
       }
@@ -382,7 +424,7 @@
           F.draw(R.ctx, def.name, x + 48, y + 3, 7, { font: 'small' });
           UI.para(def.desc, x + 48, y + 10, w - 100, 13);
           UI.costRow(x + 48, y + rowH - 11, cost, s);
-          if (UI.button(x + w - 48, y + 8, 46, 15, 'BUILD', { style: ok ? 'good' : 'off', disabled: !ok, id: 'build:' + t, sound: 'build' })) {
+          if (UI.button(x + w - 48, y + 8, 46, 15, 'BUILD', { style: ok ? 'good' : 'off', disabled: !ok, id: 'build:' + t, sound: 'build', need: cost })) {
             if (Sim.build(s, slot, t)) {
               DH.ShipView.build(slot);
               UI.toast(def.name + ' BUILT!', 'room', 11);
@@ -424,7 +466,7 @@
       y += UI.para('BOLT ON A NEW SECTION OF HULL. ROOM ' + (s.hull + 1) + ' OF ' + D.MAX_SLOTS + '.', c.x, y, c.w, 6, 'big') + 8;
       var cost = Sim.hullCost(s), ok = Sim.canAfford(s, cost);
       UI.costRow(c.x, y + 4, cost, s);
-      if (UI.button(c.x + c.w - 70, y, 70, 15, 'EXPAND', { style: ok ? 'good' : 'off', disabled: !ok, id: 'exp:go', sound: 'build' })) {
+      if (UI.button(c.x + c.w - 70, y, 70, 15, 'EXPAND', { style: ok ? 'good' : 'off', disabled: !ok, id: 'exp:go', sound: 'build', need: cost })) {
         if (Sim.expand(s)) { DH.ShipView.build(s.hull - 1); UI.toast('HULL EXPANDED!', 'hull', 11); G().save(); return false; }
       }
       return true;

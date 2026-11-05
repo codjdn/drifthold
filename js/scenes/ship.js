@@ -6,7 +6,8 @@
   var R = DH.R, F = DH.Font, In = DH.In, UI = DH.UI, U = DH.U, D = DH.D, Sim = DH.Sim, Spr = DH.Spr, Crew = DH.Crew;
   var CW = 44, CH = 32, IW = 42, IH = 30, FLOOR = 26;
   var Ship = { showBar: true };
-  var V = { stars: null, t: 0, floats: [], acc: {}, hullKey: '', hullCanvas: null, geom: null, building: {}, hover: -1, hearts: [], says: [] };
+  var V = { stars: null, t: 0, floats: [], acc: {}, hullKey: '', hullCanvas: null, geom: null, building: {}, hover: -1, hearts: [], says: [],
+    flot: null, flotT: null, sparks: [] };
   Ship.V = V;
 
   // grid layouts: slot index -> [col,row]. Slot 0 is always the bridge (front).
@@ -421,6 +422,109 @@
     return c;
   }
 
+  // ================================================================== flotsam
+  // Every so often something drifts past the ship: a lost cargo pod, a wishing comet, a bottle
+  // with a note, a friendly space jelly. Tap it for a small surprise. Miss it and nothing is lost.
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function updateFlotsam(s, dt) {
+    V.sparks = V.sparks.filter(function (p) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 20 * dt; return p.t < p.life; });
+    if (!s.unlocked.goals) return;
+    var f = V.flot;
+    if (f) {
+      f.t += dt; f.x += f.vx * dt;
+      f.y = f.y0 + Math.sin(f.t * 1.3) * 3;
+      if ((f.vx > 0 && f.x > R.W + 18) || (f.vx < 0 && f.x < -18)) V.flot = null;
+      return;
+    }
+    if (DH.G.panel || DH.G.trans) return;
+    var FL = D.FLOTSAM;
+    if (V.flotT === null) V.flotT = rnd(FL.first[0], FL.first[1]);
+    V.flotT -= dt;
+    if (V.flotT > 0) return;
+    V.flotT = rnd(FL.every[0], FL.every[1]);
+    var w = {};
+    for (var k in D.FLOTSAM_KINDS) w[k] = D.FLOTSAM_KINDS[k].w;
+    var dir = Math.random() < 0.5 ? 1 : -1;
+    var top = (Ship.hudBottom || 36) + 10, bot = R.H - DH.G.barH - 14;
+    var y0 = rnd(top, Math.max(top + 1, bot));
+    V.flot = { kind: U.weighted(w), x: dir > 0 ? -16 : R.W + 16, y0: y0, y: y0, vx: dir * rnd(FL.speed[0], FL.speed[1]), t: 0 };
+  }
+  Ship.spawnFlotsam = function (kind) { V.flotT = 0; V.flot = null; updateFlotsam(DH.G.state, 0); if (V.flot && kind) V.flot.kind = kind; return V.flot; };
+
+  function rewardText(rw) { return Object.keys(rw).map(function (k) { return '+' + U.fmt(rw[k]) + ' ' + D.resName(k); }).join(' '); }
+  function collectFlotsam(s, f) {
+    var ores = Object.keys(D.sector(s.sector).ores).filter(function (k) { return !D.ORES[k].rare; });
+    var base = Math.max(4, Math.round(Sim.droneStats(s).cargo * 0.12));
+    var rw = {}, o1 = U.pick(ores), o2 = U.pick(ores), xp = D.XP.flotsam, cols = [10, 7, 9];
+    if (f.kind === 'pod') {
+      rw[o1] = base; rw[o2] = (rw[o2] || 0) + Math.ceil(base / 2);
+      UI.toast('CARGO POD! ' + rewardText(rw), D.ORES[o1].icon, 10);
+    } else if (f.kind === 'comet') {
+      if (Math.random() < 0.3) rw.dust = 1; else rw[o1] = Math.ceil(base * 0.7);
+      xp *= 2; cols = [12, 7, 6];
+      UI.toast('MADE A WISH! ' + rewardText(rw), 'star', 12);
+    } else if (f.kind === 'bottle') {
+      if (Sim.findSlot(s, 'hydroponics') >= 0) rw.food = Math.max(3, Math.round(base * 0.5)); else rw[o1] = Math.ceil(base * 0.6);
+      UI.toast(U.pick(D.BOTTLE_NOTES), 'note', 6);
+      UI.toast('MESSAGE IN A BOTTLE ' + rewardText(rw), 'note', 10);
+      cols = [12, 15, 7];
+    } else {
+      if (Sim.findSlot(s, 'lab') >= 0 || Sim.findSlot(s, 'observatory') >= 0) rw.data = Math.max(2, Math.round(base * 0.25)); else rw[o1] = Math.ceil(base * 0.6);
+      UI.toast('THE SPACE JELLY SAYS HI! ' + rewardText(rw), 'heart', 14);
+      s.crew.forEach(function (c) { Crew.poke(c); });
+      cols = [14, 8, 7];
+    }
+    Sim.give(s, rw, 'flotsam');
+    Sim.addXp(s, xp, 'flotsam');
+    s.stats.flotsam = (s.stats.flotsam || 0) + 1;
+    DH.Snd.play('power');
+    for (var i = 0; i < 22; i++) {
+      var a = Math.random() * Math.PI * 2, sp = rnd(15, 50);
+      V.sparks.push({ x: f.x, y: f.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 10, t: 0, life: rnd(0.4, 0.9), col: cols[i % cols.length] });
+    }
+    DH.G.markDirty();
+  }
+
+  function drawFlotsam(f, t) {
+    var x = Math.round(f.x), y = Math.round(f.y), dir = f.vx > 0 ? 1 : -1;
+    if (f.kind === 'pod') {
+      R.box(x - 6, y - 4, 13, 9, 0);
+      R.rect(x - 5, y - 3, 11, 7, 6); R.rect(x - 5, y + 1, 11, 3, 13); R.rect(x - 5, y - 1, 11, 1, 9);
+      R.rect(x - 5, y - 3, 11, 1, 7);
+      R.pset(x - 3, y + 2, 5); R.pset(x + 3, y + 2, 5);
+      R.rect(x, y - 6, 1, 2, 5); R.pset(x, y - 7, Math.floor(t * 3) % 2 ? 8 : 2);
+    } else if (f.kind === 'comet') {
+      for (var i = 1; i < 14; i++) {
+        var tc = i < 3 ? 7 : (i < 6 ? 12 : (i < 10 ? 13 : 1));
+        R.pset(x - dir * i, y + Math.round(Math.sin(t * 6 + i * 0.7) * (i / 7)), tc);
+        if (i < 7 && i % 2) R.pset(x - dir * i, y - 1, 12);
+      }
+      R.circ(x, y, 2, 12); R.pset(x, y, 7); R.pset(x + dir, y - 1, 7);
+    } else if (f.kind === 'bottle') {
+      var tilt = Math.sin(t * 1.5) > 0 ? 0 : 1;
+      R.box(x - 5, y - 3 + tilt, 9, 7, 0);
+      R.rect(x - 4, y - 2 + tilt, 7, 5, 12); R.rect(x - 4, y - 2 + tilt, 7, 1, 7);
+      R.rect(x - 3, y + tilt, 4, 2, 15); R.pset(x - 2, y + tilt, 4);
+      R.rect(x + 3, y - 1 + tilt, 2, 3, 0); R.rect(x + 3, y + tilt, 2, 1, 12); R.pset(x + 5, y + tilt, 4);
+    } else {
+      // space jelly: a pink dome with blinking eyes and wiggly tentacles
+      R.circ(x, y - 1, 4, 14);
+      R.rect(x - 4, y, 9, 2, 14); R.rect(x - 4, y + 2, 9, 1, 2);
+      R.pset(x - 2, y - 3, 7); R.pset(x - 1, y - 4, 7);
+      var blink = Math.floor(t * 2) % 5 === 0;
+      R.pset(x - 1, y - 1, blink ? 14 : 0); R.pset(x + 2, y - 1, blink ? 14 : 0);
+      for (var k = -3; k <= 3; k += 2) {
+        for (var j = 0; j < 4; j++) R.pset(x + k + Math.round(Math.sin(t * 4 + k + j * 0.9) * 0.8), y + 3 + j, j < 2 ? 14 : 8);
+      }
+    }
+    // a twinkle so it reads as something you can tap
+    var tw = (t * 1.2) % 1;
+    if (tw < 0.25) {
+      var sx = x + 7, sy = y - 7;
+      R.pset(sx, sy, 7); R.pset(sx - 1, sy, 10); R.pset(sx + 1, sy, 10); R.pset(sx, sy - 1, 10); R.pset(sx, sy + 1, 10);
+    }
+  }
+
   // ================================================================== scene
   Ship.enter = function (params) {
     V.t = V.t || 0;
@@ -447,6 +551,7 @@
       V.giftT = (V.giftT || 0) + dt;
       if (V.giftT > 0.9) { V.giftT = 0; DH.G.openPanel('gift'); }
     } else V.giftT = 0;
+    updateFlotsam(s, dt);
     Crew.update(s, dt, Ship.stations, V.t);
     Crew.post(s);
     // floating "+1" production popups
@@ -541,6 +646,8 @@
     var H = hc.hull;
     R.img(hc, hx, hy);
     var canClick = UI.enabled && !DH.G.panel;
+    var flot = V.flot;
+    if (flot && canClick && UI.hit('flotsam', flot.x - 10, flot.y - 9, 20, 18)) { collectFlotsam(s, flot); V.flot = null; flot = null; }
     g.cells.forEach(function (cell) {
       var x = cell.x, y = cell.y + bob;
       var ix = x + 2, iy = y + 2;
@@ -618,6 +725,8 @@
       R.pset(Math.round(U.clamp(sy.x, bx + 2, bx + tw - 3)), by + 7, 7);
       F.draw(R.ctx, sy.text, bx + 3, by + 1, 1, { font: 'small' });
     });
+    if (flot) drawFlotsam(flot, V.t);
+    V.sparks.forEach(function (p) { if (p.t < p.life * 0.6 || Math.floor(p.t * 12) % 2) R.pset(p.x, p.y, p.col); });
     var hb = drawHud(s);
     Ship.hudBottomCache = hb;
   };
