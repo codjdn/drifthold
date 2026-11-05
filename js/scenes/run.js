@@ -34,8 +34,18 @@
       ast: [], chunks: [], pickups: [], parts: [], floats: [], hazards: [], warns: [], wells: [], whales: [],
       phase: 'launch', pt: 0, t: 0, hits: 0, cells: 0, endReason: null, fullT: 0,
       joy: null, hazardT: 5, storm: null, lowBeep: 0, firstRun: s.stats.runs === 0,
-      hint: 0, newOres: [], tally: null, mined: 0
+      hint: 0, newOres: [], tally: null, mined: 0,
+      combo: 0, comboT: 0, comboTier: 0, bestCombo: 0, comboBonus: 0, comboPop: 0,
+      crateAt: null, crateSpawned: false, crateGot: false, signalT: 0, crateMin: null,
+      dash: { t: -1, cd: 0, dx: 1, dy: 0, trail: [] }, pressAt: 0, smashed: 0, freeze: 0,
+      fever: false, fevers: 0, perks: {}, perkList: [], cores: 0, coreAt: null, draft: null,
+      eventAt: null, event: null, banner: null, bannerQ: [], doubleT: 0, flashW: 0
     };
+    var veteran = s.stats.runs >= 1;
+    if (veteran) S.coreAt = rnd(D.STARCORE.first[0], D.STARCORE.first[1]);
+    if (s.stats.runs >= 2) S.eventAt = rnd(D.EVENT_AT[0], D.EVENT_AT[1]);
+    // some runs carry a salvage signal: a crate drifts in partway through
+    if (!S.firstRun && Math.random() < D.CRATE.chance) S.crateAt = rnd(8, 30);
     if (S.aid === 'glass') { S.drone.shields = S.drone.maxShields = 1; }
     if (S.aid === 'magstorm') S.drone.magnet = 9999;
     S.neb = Spr.makeNebula(256, 256, 30 + sector.id, sector.neb, sector.neb2);
@@ -137,6 +147,21 @@
     S.whales.push({ x: x, y: y, dir: dir, ph: Math.random() * 6, drop: 3, sang: 0 });
   }
 
+  function spawnCrate() {
+    S.crateSpawned = true;
+    var d = S.drone, p = null;
+    for (var k = 0; k < 40; k++) {
+      var a = Math.random() * Math.PI * 2, r = rnd(130, 210);
+      var x = d.x + Math.cos(a) * r, y = d.y + Math.sin(a) * r;
+      if (x > 30 && y > 30 && x < S.w - 30 && y < S.h - 30) { p = { x: x, y: y }; break; }
+    }
+    if (!p) p = farPoint(120);
+    var ang = Math.random() * Math.PI * 2;
+    S.pickups.push({ x: p.x, y: p.y, type: 'crate', t: 0, life: D.CRATE.life, vx: Math.cos(ang) * 6, vy: Math.sin(ang) * 6 });
+    S.signalT = 3.5;
+    Snd.play('crate');
+  }
+
   // ------------------------------------------------------------------ effects
   function burst(x, y, n, cols, speed, life) {
     for (var i = 0; i < n; i++) {
@@ -147,6 +172,178 @@
   }
   function floatText(x, y, txt, col, icon) {
     S.floats.push({ x: x, y: y, txt: txt, col: col, icon: icon, t: 0 });
+  }
+
+  // ------------------------------------------------------------------ combo chain
+  var COMBO_COLS = [7, 10, 9, 8, 14, 12, 11];
+  function comboCol(tier) { return COMBO_COLS[Math.min(COMBO_COLS.length - 1, tier)]; }
+  function comboAdd(n, ore) {
+    S.combo = S.comboT > 0 ? S.combo + n : n;
+    S.comboT = D.COMBO.window * (S.perks.keeper ? 1.75 : 1);
+    if (!S.fever && S.combo >= (S.perks.overclock ? D.FEVER.atOverclock : D.FEVER.at)) startFever();
+    S.bestCombo = Math.max(S.bestCombo, S.combo);
+    var tier = Math.floor(S.combo / D.COMBO.step);
+    if (tier > S.comboTier) {
+      S.comboTier = tier;
+      var bonus = Math.min(D.COMBO.maxBonus, tier + 1);
+      // rare ores stay rare: chain bonuses pay out in the sector's everyday ores
+      if (D.ORES[ore].rare) ore = Object.keys(S.sector.ores).filter(function (k) { return !D.ORES[k].rare; })[0];
+      var got = addCargo(ore, bonus);
+      S.mined += got; S.comboBonus += got;
+      var d = S.drone;
+      floatText(d.x, d.y - 16, 'COMBO ' + S.combo + '!' + (got ? ' +' + got : ''), comboCol(tier));
+      Snd.play('combo', Math.min(12, tier * 2));
+      burst(d.x, d.y, 10 + tier * 3, [comboCol(tier), 7, 10], 55, 0.5);
+      R.addShake(1.5);
+      S.comboPop = 0.4;
+    }
+  }
+  function comboEnd(broken) {
+    if (S.combo >= 5 && broken) floatText(S.drone.x, S.drone.y - 16, 'CHAIN BROKEN', 13);
+    S.combo = 0; S.comboT = 0; S.comboTier = 0;
+    endFever();
+  }
+
+  function showBanner(b) {
+    if (S.banner && S.banner.t < 2) S.bannerQ.push(b); else S.banner = b;
+  }
+
+  // ------------------------------------------------------------------ fever
+  function startFever() {
+    if (S.fever) return;
+    S.fever = true; S.fevers++;
+    showBanner({ txt: 'FEVER!', sub: 'DOUBLE ORE UNTIL THE CHAIN BREAKS', t: 0, col: 14 });
+    S.flashW = 0.15;
+    Snd.play('fever');
+    Snd.setMusic('fever');
+    R.addShake(4);
+    burst(S.drone.x, S.drone.y, 40, [14, 10, 12, 7], 90, 0.8);
+  }
+  function endFever() {
+    if (!S.fever) return;
+    S.fever = false;
+    Snd.play('feverEnd');
+    Snd.setMusic(S.phase === 'play' ? 'run' : null);
+  }
+
+  // ------------------------------------------------------------------ dash
+  function canDash() { return S.phase === 'play' && S.dash.cd <= 0 && S.dash.t <= 0; }
+  function dashing() { return S.dash.t > -D.DASH.grace; }
+  function doDash(dx, dy) {
+    var l = Math.sqrt(dx * dx + dy * dy);
+    if (l < 0.01) { dx = Math.cos(S.drone.ang); dy = Math.sin(S.drone.ang); l = 1; }
+    S.dash.dx = dx / l; S.dash.dy = dy / l;
+    S.dash.t = D.DASH.time;
+    S.dash.cd = D.DASH.cooldown * (S.perks.afterburn ? 0.5 : 1);
+    S.drone.ang = Math.atan2(S.dash.dy, S.dash.dx);
+    Snd.play('dash');
+    R.addShake(1.5);
+    burst(S.drone.x, S.drone.y, 10, [7, 12, 6], 50, 0.35);
+  }
+  function smashRock(a) {
+    a.dead = true;
+    S.smashed++;
+    burst(a.x, a.y, 16 + a.r * 2, [a.cols[0], a.cols[1], a.cols[2], 7], 70 + a.r * 4, 0.6);
+    R.addShake(a.r > 9 ? 5 : 3);
+    S.freeze = Math.max(S.freeze, a.r > 9 ? 0.07 : 0.045);
+    Snd.play('smash', Math.min(12, S.smashed % 8 * 2));
+    floatText(a.x, a.y - a.r - 4, U.pick(['SMASH!', 'POW!', 'CRUNCH!', 'BOOM!']), 7);
+    // a smash keeps the chain alive
+    var ore = Object.keys(S.sector.ores).filter(function (k) { return !D.ORES[k].rare; })[0];
+    if (S.comboT > 0) S.comboT = D.COMBO.window * (S.perks.keeper ? 1.75 : 1);
+    if (S.perks.wrecker) {
+      for (var k = 0; k < 2; k++) {
+        var aa = Math.random() * Math.PI * 2;
+        S.chunks.push({ x: a.x, y: a.y, vx: Math.cos(aa) * 40, vy: Math.sin(aa) * 40, ore: pickOre() === 'dust' ? ore : pickOre(), n: 1, t: 0, life: 16, delay: 0.1 });
+      }
+    }
+    if (a.wrap) S.respawn = (S.respawn || 0) + 1;
+  }
+
+  // ------------------------------------------------------------------ star cores & the perk draft
+  function spawnCore(x, y) {
+    S.cores++;
+    var p;
+    if (x === undefined) {
+      var d = S.drone, a = Math.random() * Math.PI * 2, r = rnd(80, 140);
+      p = { x: U.clamp(d.x + Math.cos(a) * r, 30, S.w - 30), y: U.clamp(d.y + Math.sin(a) * r, 30, S.h - 30) };
+    } else p = { x: x, y: y };
+    S.pickups.push({ x: p.x, y: p.y, type: 'core', t: 0, life: 9999 });
+    Snd.play('core');
+  }
+  function openDraft() {
+    var pool = D.PERK_ORDER.filter(function (id) {
+      if (S.perks[id]) return false;
+      if (id === 'salvager' && (S.crateSpawned || S.crateGot)) return false;
+      return true;
+    });
+    U.shuffle(pool);
+    S.draft = { opts: pool.slice(0, 3), t: 0 };
+    Snd.thrust(0);
+    Snd.play('perk');
+  }
+  Run.pickPerk = function (i) {
+    if (!S || !S.draft) return;
+    var id = S.draft.opts[i];
+    if (!id) return;
+    S.draft = null;
+    S.perks[id] = true;
+    S.perkList.push(id);
+    var d = S.drone;
+    if (id === 'bulwark') { d.maxShields += 2; d.shields += 2; }
+    if (id === 'salvager') { S.crateMin = 'rare'; spawnCrate(); }
+    d.inv = Math.max(d.inv, 0.8);
+    floatText(d.x, d.y - 14, D.PERKS[id].name + '!', 14);
+    burst(d.x, d.y, 30, [14, 7, 10], 70, 0.6);
+    Snd.play('upgrade');
+    S.joy = null;
+  };
+
+  // ------------------------------------------------------------------ surprise events
+  function rarestOre() {
+    var best = null, bw = 1e9;
+    for (var k in S.sector.ores) { if (D.ORES[k].rare) continue; if (S.sector.ores[k] < bw) { bw = S.sector.ores[k]; best = k; } }
+    return best || 'cu';
+  }
+  function triggerEvent() {
+    var w = {};
+    for (var k in D.EVENTS) w[k] = D.EVENTS[k].w;
+    var id = U.weighted(w), def = D.EVENTS[id], d = S.drone;
+    S.event = { id: id, t: 0, side: Math.floor(Math.random() * 4), spawn: 0 };
+    showBanner({ txt: def.name, sub: def.sub, t: 0, col: 10 });
+    Snd.play('event');
+    if (id === 'geode') {
+      var g = makeAsteroid(rarestOre(), 'ore', 2);
+      g.r = 18; g.amt = g.max = 22; g.geode = true; g.seed = 177; g.vx *= 0.3; g.vy *= 0.3;
+      var a = Math.random() * Math.PI * 2;
+      g.x = U.clamp(d.x + Math.cos(a) * 150, 40, S.w - 40); g.y = U.clamp(d.y + Math.sin(a) * 150, 40, S.h - 40);
+      S.ast.push(g);
+      S.geode = g;
+    } else if (id === 'bloom') {
+      for (var i = 0; i < 6; i++) {
+        var ang = i / 6 * Math.PI * 2;
+        spawnPickup('fuel', U.clamp(d.x + Math.cos(ang) * 46, 20, S.w - 20), U.clamp(d.y + Math.sin(ang) * 46, 20, S.h - 20));
+      }
+    } else if (id === 'double') S.doubleT = 10;
+  }
+  function updateEvent(dt) {
+    var ev = S.event;
+    if (!ev) return;
+    ev.t += dt;
+    if (ev.id === 'orestorm' && ev.t < 5) {
+      ev.spawn -= dt;
+      if (ev.spawn <= 0) {
+        ev.spawn = 0.3;
+        var a = makeAsteroid(pickOre() === 'dust' ? rarestOre() : pickOre(), 'ore', Math.random() < 0.6 ? 0 : 1);
+        var cx = S.cam.x, cy = S.cam.y, sp = rnd(28, 45);
+        if (ev.side === 0) { a.x = cx - 20; a.y = cy + rnd(10, R.H - 10); a.vx = sp; a.vy = rnd(-6, 6); }
+        else if (ev.side === 1) { a.x = cx + R.W + 20; a.y = cy + rnd(10, R.H - 10); a.vx = -sp; a.vy = rnd(-6, 6); }
+        else if (ev.side === 2) { a.x = cx + rnd(10, R.W - 10); a.y = cy - 20; a.vy = sp; a.vx = rnd(-6, 6); }
+        else { a.x = cx + rnd(10, R.W - 10); a.y = cy + R.H + 20; a.vy = -sp; a.vx = rnd(-6, 6); }
+        a.wrap = false;
+        S.ast.push(a);
+      }
+    }
   }
 
   // ------------------------------------------------------------------ input -> steering vector
@@ -195,9 +392,10 @@
 
   function hitDrone(nx, ny, power) {
     var d = S.drone;
-    if (d.inv > 0 || S.phase !== 'play') return;
+    if (d.inv > 0 || dashing() || S.phase !== 'play') return;
     d.shields--;
     S.hits++;
+    comboEnd(true);
     d.inv = 1.3;
     d.flash = 0.25;
     d.vx = nx * power; d.vy = ny * power;
@@ -227,9 +425,40 @@
   function endRun(reason) {
     if (S.phase !== 'play') return;
     S.phase = 'return'; S.pt = 0; S.endReason = reason;
+    S.bestCombo = Math.max(S.bestCombo, S.combo);
     S.drone.contact = null;
+    S.dash.t = -1;
+    endFever();
     Snd.play('return');
     Snd.thrust(0);
+  }
+
+  // one chunk of ore comes off an ore rock (drilled, or knocked loose by a dash)
+  function dropChunk(a2) {
+    var d = S.drone, st = S.st;
+    if (a2.dead || a2.amt <= 0) return;
+    a2.amt--;
+    a2.flash = 0.12;
+    var n = st.chunk;
+    if (S.perks.twin) n += 1;
+    if (S.fever) n *= 2;
+    if (S.doubleT > 0) n *= 2;
+    if (Math.random() < st.luck) { n *= 2; floatText(a2.x, a2.y - a2.r - 6, 'LUCKY!', 10); }
+    else if (S.perks.rich && Math.random() < 0.25) { n *= 2; floatText(a2.x, a2.y - a2.r - 6, 'RICH!', 10); }
+    var ang = Math.atan2(d.y - a2.y, d.x - a2.x);
+    var pieces = Math.min(3, n);
+    for (var k = 0; k < pieces; k++) {
+      var aa = ang + rnd(-0.9, 0.9);
+      S.chunks.push({
+        x: a2.x + Math.cos(aa) * (a2.r + 1), y: a2.y + Math.sin(aa) * (a2.r + 1),
+        vx: Math.cos(aa) * rnd(25, 45), vy: Math.sin(aa) * rnd(25, 45),
+        ore: a2.ore, n: Math.ceil(n / pieces), t: 0, life: 20, delay: 0.12
+      });
+    }
+    burst(a2.x + Math.cos(ang) * a2.r, a2.y + Math.sin(ang) * a2.r, 8 + (S.fever ? 6 : 0), [D.ORES[a2.ore].cols[1], D.ORES[a2.ore].cols[0], 7], 50, 0.4);
+    Snd.play('chunk', D.ORE_ORDER.indexOf(a2.ore));
+    R.addShake(0.8);
+    if (a2.amt <= 0) breakAsteroid(a2);
   }
 
   function breakAsteroid(a) {
@@ -237,7 +466,10 @@
     var oc = a.kind === 'ore' ? D.ORES[a.ore].cols : [6, 5];
     burst(a.x, a.y, 14 + a.r, [a.cols[1], a.cols[2], oc[1], oc[0]], 45 + a.r * 2, 0.7);
     R.addShake(a.r > 9 ? 3 : 1.5);
+    S.freeze = Math.max(S.freeze, a.r > 9 ? 0.06 : 0.035);
     Snd.play('crack');
+    if (a.geode) { S.geode = null; R.addShake(6); S.freeze = 0.12; S.flashW = 0.12; floatText(a.x, a.y - 20, 'GEODE CRACKED!', 10); burst(a.x, a.y, 50, [7, 10, 14, 12], 120, 1); }
+    if (a.kind === 'ore' && S.cores > 0 && S.cores < D.STARCORE.max && Math.random() < D.STARCORE.dropChance) { spawnCore(a.x, a.y); return; }
     // sometimes there's a little present inside
     var roll = Math.random();
     var dropChance = S.aid === 'frenzy' ? 0.25 : 0.08;
@@ -258,6 +490,15 @@
       S.pauseT = (S.pauseT || 0) + dt;
       return;
     }
+    if (S.draft) {
+      S.draft.t += dt;
+      if (S.draft.t > 0.4) {
+        if (In.key('1')) Run.pickPerk(0); else if (In.key('2')) Run.pickPerk(1); else if (In.key('3')) Run.pickPerk(2);
+      }
+      updateFx(dt);
+      return;
+    }
+    if (S.freeze > 0) { S.freeze -= dt; R.updateShake(dt); return; }
     if (S.phase === 'play' && In.key('Escape', 'p')) { S.paused = true; S.pauseT = 0; Snd.thrust(0); return; }
     S.t += dt; S.pt += dt;
     var d = S.drone, st = S.st;
@@ -271,6 +512,15 @@
       ctl = steer();
       // RETURN button (drawn in HUD) is handled in draw via UI; keyboard shortcut R
       if (In.key('r')) endRun('manual');
+      // DASH: Space/Shift, or a quick tap/click (aimed at where you tapped)
+      if (In.pressed) S.pressAt = S.t;
+      var rb0 = RET_BTN();
+      if (canDash()) {
+        if (In.key(' ', 'Shift')) doDash(ctl.m > 0 ? ctl.x : d.vx, ctl.m > 0 ? ctl.y : d.vy);
+        else if (In.released && In.drag < 5 && S.t - S.pressAt < 0.22 && !In.inRect(In.rx, In.ry, rb0.x, rb0.y, rb0.w, rb0.h)) {
+          doDash(In.rx - (d.x - S.cam.x), In.ry - (d.y - S.cam.y));
+        }
+      }
     } else if (S.phase === 'return' || S.phase === 'dock') {
       var hx = S.home.x - d.x, hy = S.home.y - d.y, hl = Math.sqrt(hx * hx + hy * hy);
       if (S.phase === 'return') {
@@ -285,7 +535,15 @@
         if (S.pt > 0.6) startTally();
       }
     }
-    if (S.phase === 'launch' || S.phase === 'play') {
+    if (S.dash.t > -1) S.dash.t -= dt;
+    if (S.dash.cd > 0) S.dash.cd -= dt;
+    if (S.dash.t > 0 && S.phase === 'play') {
+      var dsp = st.speed * D.DASH.speed;
+      d.vx = S.dash.dx * dsp; d.vy = S.dash.dy * dsp;
+      d.thrust = 1;
+      if (Math.random() < 0.9) S.parts.push({ x: d.x, y: d.y, vx: -d.vx * 0.1 + rnd(-10, 10), vy: -d.vy * 0.1 + rnd(-10, 10), life: 0.3, max: 0.3, col: U.pick([7, 12, 6]) });
+      if (Math.floor(S.t * 40) % 2) S.dash.trail.push({ x: d.x, y: d.y, ang: d.ang, t: 0 });
+    } else if (S.phase === 'launch' || S.phase === 'play') {
       var resp = S.aid === 'slippery' ? 1.2 : 5.2;
       var maxV = st.speed;
       if (ctl.m > 0) {
@@ -319,7 +577,11 @@
 
     // --- timers
     if (S.phase === 'play') {
-      var burn = S.aid === 'frenzy' ? 2 : 1;
+      var burn = (S.aid === 'frenzy' ? 2 : 1) * (S.perks.sipper ? 0.7 : 1);
+      if (S.coreAt !== null && S.cores === 0 && S.t >= S.coreAt) spawnCore();
+      if (S.eventAt !== null && !S.event && S.t >= S.eventAt) triggerEvent();
+      updateEvent(dt);
+      S.doubleT = Math.max(0, S.doubleT - dt);
       d.fuel -= dt * burn;
       if (d.fuel <= 10 && d.fuel > 0) {
         S.lowBeep -= dt;
@@ -330,6 +592,11 @@
         S.fullT += dt;
         if (S.fullT > 1.4) endRun('full');
       } else S.fullT = 0;
+      // the chain keeps going while you drill; it fades if you go too long without collecting
+      if (S.comboT > 0 && !d.contact && !dashing()) { S.comboT -= dt; if (S.comboT <= 0) comboEnd(false); }
+      S.comboPop = Math.max(0, S.comboPop - dt);
+      if (S.crateAt !== null && !S.crateSpawned && S.t >= S.crateAt) spawnCrate();
+      S.signalT = Math.max(0, S.signalT - dt);
       if (st.regen && d.shields < d.maxShields) {
         d.regen += dt;
         if (d.regen > 20) { d.regen = 0; d.shields++; Snd.play('shield'); floatText(d.x, d.y - 8, '+SHIELD', 12); }
@@ -359,6 +626,7 @@
       var dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
       var hitR = a.r * 0.85 + DRONE_R;
       if (a.kind === 'rock') {
+        if (dist < hitR + 1 && dashing() && (a.r <= D.DASH.smashR || S.perks.wrecker)) { smashRock(a); continue; }
         if (dist < hitR) {
           var nx = dx / dist, ny = dy / dist;
           d.x = a.x + nx * hitR; d.y = a.y + ny * hitR;
@@ -366,6 +634,13 @@
           else { d.vx += nx * 40; d.vy += ny * 40; }
         }
       } else {
+        if (dist < hitR + 1 && S.dash.t > 0 && !(a.dashHit > S.t - 0.4)) {
+          // ramming an ore rock knocks a chunk loose
+          a.dashHit = S.t;
+          dropChunk(a);
+          S.freeze = Math.max(S.freeze, 0.04);
+          S.dash.t = Math.min(S.dash.t, 0.02);
+        }
         if (dist < hitR) {
           var nx2 = dx / dist, ny2 = dy / dist;
           d.x = a.x + nx2 * hitR; d.y = a.y + ny2 * hitR;
@@ -396,24 +671,7 @@
       Snd.play('drill');
       if (a2.drill >= 1) {
         a2.drill = 0;
-        a2.amt--;
-        a2.flash = 0.12;
-        var n = st.chunk;
-        if (Math.random() < st.luck) { n *= 2; floatText(a2.x, a2.y - a2.r - 6, 'LUCKY!', 10); }
-        var ang = Math.atan2(d.y - a2.y, d.x - a2.x);
-        var pieces = Math.min(3, n);
-        for (var k = 0; k < pieces; k++) {
-          var aa = ang + rnd(-0.9, 0.9);
-          S.chunks.push({
-            x: a2.x + Math.cos(aa) * (a2.r + 1), y: a2.y + Math.sin(aa) * (a2.r + 1),
-            vx: Math.cos(aa) * rnd(25, 45), vy: Math.sin(aa) * rnd(25, 45),
-            ore: a2.ore, n: Math.ceil(n / pieces), t: 0, life: 20, delay: 0.12
-          });
-        }
-        burst(a2.x + Math.cos(ang) * a2.r, a2.y + Math.sin(ang) * a2.r, 8, [D.ORES[a2.ore].cols[1], D.ORES[a2.ore].cols[0], 7], 50, 0.4);
-        Snd.play('chunk', D.ORE_ORDER.indexOf(a2.ore));
-        R.addShake(0.8);
-        if (a2.amt <= 0) breakAsteroid(a2);
+        dropChunk(a2);
       }
     } else {
       if (d.contact) d.contact.drill = Math.max(0, d.contact.drill - dt * 0.5);
@@ -424,7 +682,7 @@
     if (S.respawn > 0 && Math.random() < dt * 0.8) { S.respawn--; spawnAsteroid(true); }
 
     // --- ore chunks (magnet)
-    var magR = st.magnet * (d.magnet > 0 ? 3 : 1) * (S.storm && S.storm.active ? 0.5 : 1);
+    var magR = st.magnet * (d.magnet > 0 ? 3 : 1) * (S.storm && S.storm.active ? 0.5 : 1) * (S.perks.megamag ? 2 : 1) * (S.fever ? D.FEVER.magnet : 1);
     for (i = 0; i < S.chunks.length; i++) {
       var c = S.chunks[i];
       c.t += dt;
@@ -446,9 +704,10 @@
         if (got > 0) {
           S.mined += got;
           c.n -= got;
-          Snd.play('pickup', D.ORE_ORDER.indexOf(c.ore));
+          Snd.play('pickup', D.ORE_ORDER.indexOf(c.ore) + Math.min(12, Math.floor(S.combo / 4)));
           floatText(d.x + rnd(-4, 4), d.y - 8, '+' + got, D.ORES[c.ore].cols[1]);
           if (c.n <= 0) c.dead = true;
+          if (S.phase === 'play') comboAdd(got, c.ore);
         }
       }
       if (c.t > c.life) c.dead = true;
@@ -459,16 +718,24 @@
     for (i = 0; i < S.pickups.length; i++) {
       var p = S.pickups[i];
       p.t += dt;
+      if (p.vx) { p.x += p.vx * dt; p.y += p.vy * dt; }
+      if (S.perks.scavenger && S.phase === 'play') {
+        var pdx = d.x - p.x, pdy = d.y - p.y, pdl = Math.sqrt(pdx * pdx + pdy * pdy) || 1;
+        if (pdl < 90) { p.x += pdx / pdl * 50 * dt; p.y += pdy / pdl * 50 * dt; }
+      }
       if (p.life < 9999) { p.life -= dt; if (p.life <= 0) { p.dead = true; continue; } }
       if (S.phase !== 'play') continue;
       if (U.dist(p.x, p.y, d.x, d.y) < 8) {
         p.dead = true;
         Snd.play('power');
         burst(p.x, p.y, 12, [7, 10, 12], 40, 0.5);
-        if (p.type === 'fuel') { d.fuel = Math.min(d.fuel + D.RUN.fuelCell, d.maxFuel + 30); S.cells++; floatText(p.x, p.y - 8, '+' + D.RUN.fuelCell + 'S FUEL', 10); }
+        var cell = Math.round(D.RUN.fuelCell * (S.perks.scavenger ? 1.5 : 1));
+        if (p.type === 'fuel') { d.fuel = Math.min(d.fuel + cell, d.maxFuel + 30); S.cells++; floatText(p.x, p.y - 8, '+' + cell + 'S FUEL', 10); }
+        else if (p.type === 'core') { floatText(p.x, p.y - 8, 'STAR CORE!', 14); R.addShake(2); burst(p.x, p.y, 30, [14, 7, 2], 70, 0.7); openDraft(); }
         else if (p.type === 'magnet') { if (d.magnet < 9000) d.magnet = D.RUN.boostTime; floatText(p.x, p.y - 8, 'MAGNET!', 8); }
         else if (p.type === 'drill') { d.drillBoost = D.RUN.boostTime; floatText(p.x, p.y - 8, 'DRILL BOOST!', 9); }
         else if (p.type === 'shieldcell') { d.shields = Math.min(d.maxShields, d.shields + 1); floatText(p.x, p.y - 8, '+SHIELD', 12); }
+        else if (p.type === 'crate') { S.crateGot = true; S.signalT = 0; floatText(p.x, p.y - 8, 'SALVAGE CRATE!', 10); Snd.play('crate'); R.addShake(2); burst(p.x, p.y, 24, [10, 9, 7], 60, 0.7); }
         if (DH.Sim) Sim.emit('pickup', { type: p.type });
       }
     }
@@ -482,8 +749,7 @@
       q.life -= dt;
     }
     S.parts = S.parts.filter(function (x) { return x.life > 0; });
-    for (i = 0; i < S.floats.length; i++) S.floats[i].t += dt;
-    S.floats = S.floats.filter(function (x) { return x.t < 0.9; });
+    updateFx(dt);
 
     // --- camera
     var lx = d.vx * 0.35, ly = d.vy * 0.35;
@@ -495,6 +761,15 @@
     R.updateShake(dt);
     S.hint += dt;
   };
+
+  function updateFx(dt) {
+    for (var i = 0; i < S.floats.length; i++) S.floats[i].t += dt;
+    S.floats = S.floats.filter(function (x) { return x.t < 0.9; });
+    S.dash.trail.forEach(function (tr) { tr.t += dt; });
+    S.dash.trail = S.dash.trail.filter(function (tr) { return tr.t < 0.22; });
+    if (S.banner) { S.banner.t += dt; if (S.banner.t > 2.4) S.banner = S.bannerQ.shift() || null; }
+    S.flashW = Math.max(0, S.flashW - dt);
+  }
 
   // ------------------------------------------------------------------ hazards
   function edgeSpawn(speed, aimAt) {
@@ -632,33 +907,88 @@
 
   // ------------------------------------------------------------------ tally
   function startTally() {
-    var s = S.s, d = S.drone;
+    var s = S.s, d = S.drone, P = DH.Prog;
     S.phase = 'tally'; S.pt = 0;
     Snd.thrust(0);
+    S.bestCombo = Math.max(S.bestCombo, S.combo);
     var haul = {};
     for (var k in d.cargo) if (d.cargo[k] > 0) haul[k] = d.cargo[k];
     var base = 0; for (k in haul) base += haul[k];
-    var bonus = {};
+    var bonus = {}, lines = [];
     var mult = 1;
+    function addBonus(frac, skipRare) {
+      var got = 0;
+      for (var o in haul) {
+        if (skipRare && D.ORES[o].rare) continue;
+        var e = Math.round(haul[o] * frac);
+        if (e > 0) { bonus[o] = (bonus[o] || 0) + e; got += e; }
+      }
+      return got;
+    }
+    if (S.comboBonus > 0) lines.push({ txt: 'BEST CHAIN X' + S.bestCombo + (S.fevers ? ' (FEVER!)' : '') + ': +' + S.comboBonus + ' BONUS ORE', col: 10 });
+    if (S.perkList.length) lines.push({ txt: 'PERKS: ' + S.perkList.map(function (id) { return D.PERKS[id].name; }).join(', '), col: 14 });
+    if (S.smashed) lines.push({ txt: 'SMASHED ' + S.smashed + ' ROCK' + (S.smashed > 1 ? 'S' : ''), col: 6 });
+    s.stats.smashed = (s.stats.smashed || 0) + S.smashed;
+    s.stats.fevers = (s.stats.fevers || 0) + S.fevers;
     if (S.anomaly) {
       mult = S.anomaly.mult;
-      for (k in haul) { var extra = Math.round(haul[k] * (mult - 1)); if (extra > 0) bonus[k] = extra; }
+      addBonus(mult - 1);
       bonus.dust = (bonus.dust || 0) + 3;
+      lines.push({ txt: 'ANOMALY BONUS X' + mult + ' +3 DUST', col: 14 });
+    }
+    if (P && !S.firstRun && base > 0 && P.dayBonusReady(s)) {
+      var g = addBonus(D.STREAK.firstRunBonus, true);
+      P.useDayBonus(s);
+      if (g > 0) lines.push({ txt: 'FIRST RUN TODAY: +' + g + ' ORE', col: 11 });
     }
     var finalHaul = {};
     for (k in haul) finalHaul[k] = haul[k];
     for (k in bonus) finalHaul[k] = (finalHaul[k] || 0) + bonus[k];
-    var prevBest = s.stats.bestHaul;
+    var prevBest = s.stats.bestHaul, prevCombo = s.stats.bestCombo || 0;
+    var xpBefore = { rank: s.rank || 1, xp: s.xp || 0, total: s.stats.xpTotal || 0 };
     var newOres = S.newOres.filter(function (o) { return !s.seen.ores[o]; });
     var total = Sim.applyRun(s, finalHaul, { hits: S.hits, cells: S.cells, reason: S.endReason, daily: !!S.anomaly, base: base });
     var reward = null;
-    if (S.anomaly && DH.Prog) reward = DH.Prog.completeDaily(s);
-    S.tally = {
+    if (S.anomaly && P) reward = P.completeDaily(s);
+    s.stats.bestCombo = Math.max(prevCombo, S.bestCombo);
+    var veteran = s.stats.runs > 1;
+    var T = S.tally = {
       haul: haul, bonus: bonus, mult: mult, total: total, base: base, keys: D.ORE_ORDER.filter(function (o) { return haul[o]; }),
-      shown: 0, t: 0, step: 0, done: false, best: total > prevBest && s.stats.runs > 1, newOres: newOres, reward: reward
+      shown: 0, t: 0, step: 0, done: false, newOres: newOres, reward: reward, lines: lines,
+      best: total > prevBest && veteran, prevBest: prevBest,
+      comboRecord: veteran && S.bestCombo > prevCombo && S.bestCombo >= D.COMBO.step,
+      crate: S.crateGot && P ? P.rollCrate(s, S.crateMin) : null, crateT: 0, crateOpen: false,
+      xpBefore: xpBefore, xpShown: 0, xpTick: 0, rankSeen: xpBefore.rank
     };
+    // the lines under the total: discoveries, records and the "so close" nudge
+    var st = [];
+    if (newOres.length) st.push({ txt: '★ NEW ORE: ' + newOres.map(function (o) { return D.ORES[o].name; }).join(', '), col: 11 });
+    if (T.best) st.push({ txt: '★ NEW RECORD HAUL! (OLD BEST ' + prevBest + ')', col: 10, flash: true });
+    else if (veteran && prevBest > 0 && total === prevBest) st.push({ txt: '★ TIED YOUR BEST HAUL!', col: 10 });
+    else if (veteran && prevBest > 0 && total >= prevBest * 0.7) st.push({ txt: 'SO CLOSE! ' + (prevBest - total) + ' SHORT OF YOUR BEST (' + prevBest + ')', col: 9 });
+    else if (veteran && prevBest > 0) st.push({ txt: 'BEST HAUL TO BEAT: ' + prevBest, col: 13 });
+    if (T.comboRecord) st.push({ txt: '★ NEW CHAIN RECORD: X' + S.bestCombo, col: 10, flash: true });
+    if (reward) st.push({ txt: '★ ' + reward, col: 14 });
+    T.stars = st;
     DH.G.save();
     Snd.setMusic(null);
+  }
+  // rank and progress as if `add` XP had been gained since the run started
+  function xpView(T, add) {
+    var r = T.xpBefore.rank, x = T.xpBefore.xp + add, guard = 0;
+    while (x >= D.xpForRank(r) && guard++ < 50) { x -= D.xpForRank(r); r++; }
+    return { rank: r, xp: x, need: D.xpForRank(r) };
+  }
+  function openCrateNow() {
+    var T = S.tally;
+    if (!T.crate || T.crateOpen) return;
+    T.crateOpen = true;
+    DH.Prog.openCrate(S.s, T.crate);
+    var idx = { common: 0, rare: 1, epic: 2 }[T.crate.rarity];
+    Snd.play('reveal', idx);
+    R.addShake(2 + idx * 2);
+    T.revealT = 0;
+    DH.G.markDirty();
   }
   function updateTally(dt) {
     var T = S.tally;
@@ -675,7 +1005,24 @@
         } else { T.done = true; Snd.play('jingle'); R.addShake(2); }
       }
       if (rows === 0 && !T.done) { T.done = true; Snd.play('jingle'); }
+    } else if (T.crate && !T.crateOpen) {
+      // the crate rattles for a moment before it pops
+      T.crateT += dt;
+      if (Math.floor(T.crateT * 9) !== Math.floor((T.crateT - dt) * 9)) Snd.play('rattle');
+      if (T.crateT > 1.2) openCrateNow();
+    } else {
+      // then the XP bar fills
+      var gained = (S.s.stats.xpTotal || 0) - T.xpBefore.total;
+      if (T.xpShown < gained) {
+        T.xpShown = Math.min(gained, T.xpShown + dt * Math.max(30, gained * 1.4));
+        T.xpTick += dt;
+        if (T.xpTick > 0.04) { T.xpTick = 0; Snd.play('blip'); }
+        var v = xpView(T, T.xpShown);
+        if (v.rank > T.rankSeen) { T.rankSeen = v.rank; T.rankPop = 1; R.addShake(3); }
+      }
     }
+    if (T.revealT !== undefined) T.revealT += dt;
+    if (T.rankPop) T.rankPop = Math.max(0, T.rankPop - dt);
     for (var i = 0; i < S.parts.length; i++) { var q = S.parts[i]; q.x += q.vx * dt; q.y += q.vy * dt; q.life -= dt; }
     S.parts = S.parts.filter(function (x) { return x.life > 0; });
     R.updateShake(dt);
@@ -721,7 +1068,16 @@
       if (x < -10 || y < -10 || x > R.W + 10 || y > R.H + 10) return;
       if (p.life < 3 && Math.floor(p.t * 8) % 2) return;
       var sp = Spr.pickup(p.type);
-      if (Math.floor(p.t * 3) % 2) R.ring(x, y, 7, p.type === 'fuel' ? 10 : (p.type === 'magnet' ? 8 : (p.type === 'drill' ? 9 : 12)));
+      if (Math.floor(p.t * 3) % 2) R.ring(x, y, 7, p.type === 'fuel' || p.type === 'crate' ? 10 : (p.type === 'magnet' ? 8 : (p.type === 'drill' ? 9 : (p.type === 'core' ? 14 : 12))));
+      if (p.type === 'core') {
+        for (var ck = 0; ck < 4; ck++) { var ca = p.t * 2.5 + ck * 1.57; R.pset(x + Math.cos(ca) * 11, y + Math.sin(ca) * 11, ck % 2 ? 14 : 7); }
+      }
+      if (p.type === 'crate') {
+        R.ring(x, y, 10 + Math.floor(p.t * 8) % 4, Math.floor(p.t * 6) % 2 ? 9 : 10);
+        var sa = p.t * 4;
+        R.pset(x + Math.cos(sa) * 9, y + Math.sin(sa) * 9, 7);
+        R.pset(x - Math.cos(sa) * 9, y - Math.sin(sa) * 9, 10);
+      }
       R.imgC(sp, x, y);
     });
     // asteroids
@@ -733,6 +1089,10 @@
       var fr = Spr.asteroidFrame(a.seed, a.r, a.kind, a.ore, a.cols, a.rot);
       if (a.flash > 0) fr = R.silhouette(fr, 7);
       R.imgC(fr, ax, ay);
+      if (a.geode) {
+        R.ring(ax, ay, a.r + 3 + Math.floor(S.t * 6) % 3, Math.floor(S.t * 5) % 2 ? 10 : 7);
+        for (var gk = 0; gk < 3; gk++) { var ga = S.t * 1.7 + gk * 2.1; R.pset(ax + Math.cos(ga) * (a.r + 6), ay + Math.sin(ga) * (a.r + 6), 7); }
+      }
       // ore sparkle so ore reads at a glance
       if (a.kind === 'ore' && Math.floor(S.t * 3 + a.seed) % 5 === 0) {
         var sa = a.rot * 2 + a.seed;
@@ -788,6 +1148,11 @@
         if ((mk + Math.floor(S.t * 8)) % 2) R.pset(dx + Math.cos(ma) * Math.min(magR, 40), dy + Math.sin(ma) * Math.min(magR, 40), 8);
       }
     }
+    // dash afterimages
+    S.dash.trail.forEach(function (tr) {
+      var tim = R.silhouette(Spr.droneFrame(S.s.chassis, S.s.paint, tr.ang), tr.t < 0.1 ? 7 : 12);
+      if (tr.t < 0.16 || Math.floor(S.t * 30) % 2) R.imgC(tim, Math.round(tr.x - cx), Math.round(tr.y - cy));
+    });
     // the drone
     if (!(S.phase === 'dock' && S.pt > 0.3)) {
       var blink = d.inv > 0 && Math.floor(S.t * 14) % 2 === 0;
@@ -822,7 +1187,14 @@
       }
       if (S.flashT > 0) R.dither25(0, 0, R.W, R.H, 7);
     }
-    if (S.phase !== 'tally') { drawWarnings(cx, cy); drawHUD(); }
+    if (S.fever && S.phase === 'play') {
+      var fc = [14, 10, 12, 11, 9][Math.floor(S.t * 10) % 5];
+      R.frame(0, 20, R.W, R.H - 20, fc);
+      R.frame(1, 21, R.W - 2, R.H - 22, Math.floor(S.t * 10) % 2 ? 2 : fc);
+    }
+    if (S.flashW > 0) R.dither(0, 0, R.W, R.H, 7);
+    if (S.phase !== 'tally') { drawWarnings(cx, cy); drawHUD(); drawBanner(); }
+    if (S.draft) drawDraft();
     if (S.paused) {
       R.dim();
       F.drawOutlined(ctx, 'PAUSED', R.W / 2, R.H / 2 - 12, 10, 0, { align: 'center' });
@@ -867,6 +1239,11 @@
     // home arrow during return or when far away
     var d = S.drone;
     if (S.phase === 'return' || U.dist(d.x, d.y, S.home.x, S.home.y) > 200) edgeArrow(S.home.x, S.home.y, 11, 'SHIP', cx, cy);
+    if (S.phase === 'play') S.pickups.forEach(function (p) {
+      if (p.type === 'crate' && Math.floor(S.t * 4) % 3) edgeArrow(p.x, p.y, 10, 'CRATE', cx, cy);
+      if (p.type === 'core' && Math.floor(S.t * 4) % 3) edgeArrow(p.x, p.y, 14, 'CORE', cx, cy);
+    });
+    if (S.phase === 'play' && S.geode && !S.geode.dead) edgeArrow(S.geode.x, S.geode.y, 10, 'GEODE', cx, cy);
     // ore sense research
     if (S.st.sense && S.phase === 'play') {
       var near = S.ast.filter(function (a) { return a.kind === 'ore'; }).sort(function (a, b) {
@@ -906,10 +1283,38 @@
     UI.bar(cxp, 3, cw, 7, d.n / d.cap, full ? (Math.floor(S.t * 6) % 2 ? 11 : 10) : 9, 1);
     R.img(Spr.icon('cargo'), cxp - 9, 3);
     F.draw(ctx, d.n + '/' + d.cap, cxp + cw / 2, 4, 7, { font: 'small', align: 'center', shadow: 0 });
+    // dash meter
+    var bx = 12 + d.maxShields * 6 + 3;
+    var dcd = D.DASH.cooldown * (S.perks.afterburn ? 0.5 : 1);
+    var dready = S.dash.cd <= 0;
+    R.img(Spr.icon('speed'), bx, 11);
+    UI.bar(bx + 8, 12, 14, 4, dready ? 1 : 1 - S.dash.cd / dcd, dready ? (Math.floor(S.t * 3) % 2 ? 12 : 7) : 13, 1);
+    bx += 26;
+    // perks taken this run
+    for (var pk = 0; pk < S.perkList.length; pk++) {
+      var pimg = Spr.icon(D.PERKS[S.perkList[pk]].icon);
+      R.img(pimg, R.W - 72 - pk * 9, 11);
+    }
+    if (S.doubleT > 0) F.drawOutlined(ctx, 'X2 ' + Math.ceil(S.doubleT) + 'S', R.W / 2, 22, Math.floor(S.t * 6) % 2 ? 10 : 9, 0, { align: 'center', font: 'small' });
     // boosts
-    var bx = 12 + d.maxShields * 6 + 4;
     if (d.magnet > 0 && d.magnet < 9000) { R.img(Spr.icon('magnet'), bx, 11); F.draw(ctx, Math.ceil(d.magnet) + '', bx + 9, 12, 8, { font: 'small' }); bx += 20; }
     if (d.drillBoost > 0) { R.img(Spr.icon('drill'), bx, 11); F.draw(ctx, Math.ceil(d.drillBoost) + '', bx + 9, 12, 9, { font: 'small' }); bx += 20; }
+    if (S.crateGot) { R.img(Spr.pickup('crate'), bx, 10); bx += 11; }
+    // combo chain counter (right side, under the cargo bar)
+    if (S.combo >= 3 && S.phase === 'play') {
+      var tier = Math.floor(S.combo / D.COMBO.step), ccol = comboCol(tier);
+      var txt = 'X' + S.combo;
+      var big = S.comboPop > 0 ? 2 : 1;
+      var tw = F.measure(txt) * big;
+      var ry = 29;
+      if (big > 1) F.drawScaled(ctx, txt, R.W - 4 - tw, ry - 3, ccol, 2);
+      else F.drawOutlined(ctx, txt, R.W - 4, ry, ccol, 0, { align: 'right' });
+      F.drawOutlined(ctx, 'COMBO', R.W - 7 - tw, ry + 1, 6, 0, { font: 'small', align: 'right' });
+      var nextAt = (tier + 1) * D.COMBO.step;
+      UI.bar(R.W - 34, ry + 9 + (big > 1 ? 4 : 0), 30, 3, d.contact ? 1 : S.comboT / (D.COMBO.window * (S.perks.keeper ? 1.75 : 1)), ccol, 1);
+      F.drawOutlined(ctx, 'NEXT ' + nextAt, R.W - 4, ry + 14 + (big > 1 ? 4 : 0), 13, 0, { font: 'small', align: 'right' });
+    }
+    if (S.signalT > 0 && Math.floor(S.t * 5) % 3) F.drawOutlined(ctx, 'SALVAGE SIGNAL! FOLLOW THE ARROW', R.W / 2, R.H - 34, 10, 0, { align: 'center', font: 'small' });
     // per-ore counts
     var oy = 24;
     D.ORE_ORDER.forEach(function (o) {
@@ -947,6 +1352,14 @@
         F.draw(ctx, hint, R.W / 2, R.H - 14, 1, { align: 'center' });
       }
     }
+    // dash hint for the first few runs
+    if (!S.firstRun && S.s.stats.runs <= 4 && S.phase === 'play' && S.t > 1 && S.t < 8 && !S.draft) {
+      var dh = In.hasTouch ? 'QUICK TAP TO DASH THROUGH GREY ROCKS!' : 'SPACE OR CLICK TO DASH THROUGH GREY ROCKS!';
+      var dhw = F.measure(dh, 'small') + 8;
+      R.box(R.W / 2 - dhw / 2, R.H - 15, dhw, 10, 0);
+      R.rect(R.W / 2 - dhw / 2 + 1, R.H - 14, dhw - 2, 8, 12);
+      F.draw(ctx, dh, R.W / 2, R.H - 12, 7, { align: 'center', font: 'small', shadow: 1 });
+    }
     // touch stick
     if (S.joy && In.down) {
       R.ring(S.joy.x, S.joy.y, 14, 13);
@@ -957,48 +1370,155 @@
     }
   }
 
-  function drawTally(dt) {
-    var T = S.tally, ctx = R.ctx;
+  function drawBanner() {
+    var b = S.banner;
+    if (!b) return;
+    var k = b.t < 0.25 ? b.t / 0.25 : (b.t > 2.1 ? 1 - (b.t - 2.1) / 0.3 : 1);
+    var y = Math.round(R.H * 0.32);
+    var bw = Math.round(R.W * U.easeOutCubic(U.clamp(k, 0, 1)));
+    R.rect(Math.round((R.W - bw) / 2), y - 3, bw, 26, 0);
+    R.rect(Math.round((R.W - bw) / 2), y - 3, bw, 1, b.col);
+    R.rect(Math.round((R.W - bw) / 2), y + 22, bw, 1, b.col);
+    if (k > 0.8) {
+      var tw = F.measure(b.txt) * 2;
+      F.drawScaled(R.ctx, b.txt, Math.round(R.W / 2 - tw / 2), y, Math.floor(b.t * 8) % 2 ? 7 : b.col, 2);
+      F.draw(R.ctx, b.sub, R.W / 2, y + 16, 6, { font: 'small', align: 'center' });
+    }
+  }
+  function drawDraft() {
+    var dr = S.draft, ctx = R.ctx;
     R.dim();
+    var portrait = R.W < 250;
+    F.drawOutlined(ctx, 'STAR CORE! PICK A PERK', R.W / 2, portrait ? 40 : 26, 14, 0, { align: 'center' });
+    F.drawOutlined(ctx, 'IT LASTS FOR THE REST OF THIS RUN', R.W / 2, (portrait ? 40 : 26) + 10, 6, 0, { align: 'center', font: 'small' });
+    var n = dr.opts.length;
+    for (var i = 0; i < n; i++) {
+      var id = dr.opts[i], def = D.PERKS[id];
+      var w, h, x, y;
+      if (portrait) { w = R.W - 20; h = 40; x = 10; y = 62 + i * (h + 6); }
+      else { w = Math.min(96, Math.floor((R.W - 24) / 3)); h = 82; x = Math.floor(R.W / 2 - (w * n + 6 * (n - 1)) / 2) + i * (w + 6); y = 46; }
+      var pop = Math.min(1, Math.max(0, (dr.t - i * 0.08) / 0.2));
+      if (pop <= 0) continue;
+      var yo = Math.round((1 - U.easeOutBack(pop)) * 20);
+      var ready = dr.t > 0.4;
+      if (ready && UI.button(x, y + yo, w, h, '', { style: 'primary', id: 'perk:' + i, sound: 'perk' })) { Run.pickPerk(i); return; }
+      if (!ready) { R.box(x, y + yo, w, h, 0); R.rect(x + 1, y + yo + 1, w - 2, h - 4, 12); }
+      var ic = Spr.icon(def.icon);
+      if (portrait) {
+        R.box(x + 4, y + yo + 6, 15, 15, 0); R.rect(x + 5, y + yo + 7, 13, 13, 1);
+        R.img(ic, x + 8, y + yo + 10);
+        F.draw(ctx, def.name, x + 24, y + yo + 5, 7, { shadow: 1 });
+        UI.para(def.desc, x + 24, y + yo + 15, w - 28, 1);
+        F.draw(ctx, String(i + 1), x + w - 6, y + yo + 4, 13, { font: 'small' });
+      } else {
+        R.box(x + w / 2 - 9, y + yo + 6, 19, 19, 0); R.rect(x + w / 2 - 8, y + yo + 7, 17, 17, 1);
+        R.imgC(ic, x + w / 2, y + yo + 15);
+        var nm = def.name;
+        F.draw(ctx, nm, x + w / 2, y + yo + 30, 7, { align: 'center', shadow: 1, font: F.measure(nm) > w - 6 ? 'small' : 'big' });
+        UI.para(def.desc, x + 5, y + yo + 42, w - 10, 1);
+        F.draw(ctx, String(i + 1), x + w - 7, y + yo + 4, 13, { font: 'small' });
+      }
+    }
+  }
+
+  var RARITY = { common: { name: 'COMMON', col: 6 }, rare: { name: 'RARE!', col: 12 }, epic: { name: 'EPIC!!', col: 14 } };
+  function leaveTally(again) {
+    var T = S.tally;
+    openCrateNow();
+    if (again) {
+      if (DH.Prog) DH.Prog.afterRun({ total: T.total });
+      DH.G.launch(null);
+    } else DH.G.setScene('ship', { fromRun: { total: T.total, newOres: T.newOres, reason: S.endReason } });
+  }
+  function drawTally(dt) {
+    var T = S.tally, ctx = R.ctx, s = S.s;
+    R.dim();
+    var rowH = 9, sl = 8;
+    var goal = DH.Prog ? DH.Prog.closestGoal(s) : null;
+    var stars = T.stars.slice();
+    var crateH = T.crate ? 11 + (T.crate.cosmetic ? 8 : 0) : 0;
     var rows = Math.max(1, T.keys.length);
-    var extra = (T.mult > 1 ? 1 : 0) + (T.newOres.length ? 1 : 0) + (T.best ? 1 : 0) + (T.reward ? 1 : 0);
-    var h = Math.min(R.H - 8, 58 + rows * 11 + extra * 10);
-    var w = Math.min(R.W - 8, 200);
+    function need() { return 16 + rows * rowH + 3 + T.lines.length * sl + 16 + stars.length * sl + crateH + 15 + (goal ? sl : 0) + 22; }
+    if (need() > R.H - 6) goal = null;
+    while (need() > R.H - 6 && stars.length > 1) stars.pop();
+    var h = Math.min(R.H - 6, need());
+    var w = Math.min(R.W - 8, 210);
     var x = Math.floor((R.W - w) / 2), y = Math.floor((R.H - h) / 2);
     var title = { fuel: 'RUN COMPLETE', full: 'FULL HOLD!', manual: 'RUN COMPLETE', shields: 'DRONE RECOVERED' }[S.endReason] || 'RUN COMPLETE';
     var c = UI.panelFrame(x, y, w, h, title, { icon: 'cargo', close: false });
-    var yy = c.y + 1;
+    var yy = c.y;
     // count-up rows: reveal the haul progressively
     var budget = T.shown;
-    if (!T.keys.length) { F.draw(ctx, 'NO ORE THIS TIME. NEXT RUN!', c.x + c.w / 2, yy + 2, 13, { align: 'center', font: 'small' }); yy += 11; }
+    if (!T.keys.length) { F.draw(ctx, 'NO ORE THIS TIME. NEXT RUN!', c.x + c.w / 2, yy + 2, 13, { align: 'center', font: 'small' }); yy += rowH; }
     T.keys.forEach(function (o) {
       var v = Math.min(T.haul[o], budget); budget -= v;
       R.img(Spr.icon(D.ORES[o].icon), c.x + 2, yy);
       F.draw(ctx, D.ORES[o].name, c.x + 12, yy, 6);
       F.draw(ctx, String(v), c.x + c.w - 2, yy, v === T.haul[o] ? 7 : 10, { align: 'right' });
-      yy += 11;
+      yy += rowH;
     });
     R.rect(c.x, yy, c.w, 1, 13); yy += 3;
-    if (T.mult > 1 && T.done) {
-      F.draw(ctx, 'ANOMALY BONUS X' + T.mult + ' +3 DUST', c.x + 2, yy, 14, { font: 'small' }); yy += 10;
-    }
+    T.lines.forEach(function (l) {
+      var lt = l.txt;
+      while (F.measure(lt, 'small') > c.w - 4 && lt.length > 8) lt = lt.slice(0, -2);
+      if (T.done) F.draw(ctx, lt, c.x + 2, yy, l.col, { font: 'small' });
+      yy += sl;
+    });
     F.draw(ctx, 'TOTAL', c.x + 2, yy + 1, 6);
     var tot = T.done ? T.total : T.shown;
-    F.drawScaled(ctx, String(tot), c.x + c.w - 2 - F.measure(String(tot)) * 2, yy - 2, T.done ? 10 : 7, 2);
+    F.drawScaled(ctx, String(tot), c.x + c.w - 2 - F.measure(String(tot)) * 2, yy - 2, T.done ? (T.best && Math.floor(T.t * 4) % 2 ? 7 : 10) : 7, 2);
     yy += 16;
-    if (T.done) {
-      if (T.newOres.length) { F.draw(ctx, '★ NEW ORE: ' + T.newOres.map(function (o) { return D.ORES[o].name; }).join(', '), c.x + 2, yy, 11, { font: 'small' }); yy += 10; }
-      if (T.best) { F.draw(ctx, '★ BEST HAUL YET!', c.x + 2, yy, 10, { font: 'small' }); yy += 10; }
-      if (T.reward) { F.draw(ctx, '★ ' + T.reward, c.x + 2, yy, 14, { font: 'small' }); yy += 10; }
-      if (Math.random() < 0.3) burst(S.cam.x + R.W / 2 + rnd(-w / 2, w / 2), S.cam.y + y, 1, [10, 7, 9], 30, 0.6);
-    }
-    var by = y + h - 18;
-    if (T.done) {
-      if (UI.button(c.x + c.w / 2 - 40, by, 80, 15, 'CONTINUE', { style: 'good', id: 'run:continue' }) || In.key('Enter', ' ')) {
-        DH.G.setScene('ship', { fromRun: { total: T.total, newOres: T.newOres, reason: S.endReason } });
+    stars.forEach(function (l) {
+      if (T.done && !(l.flash && Math.floor(T.t * 3) % 4 === 0)) F.draw(ctx, l.txt, c.x + 2, yy, l.col, { font: 'small' });
+      yy += sl;
+    });
+    // salvage crate
+    if (T.crate) {
+      if (T.done) {
+        var shake = !T.crateOpen ? Math.round(Math.sin(T.crateT * 40) * Math.min(2, T.crateT * 2)) : 0;
+        R.img(Spr.pickup('crate'), c.x + 1 + shake, yy - 1);
+        if (!T.crateOpen) F.draw(ctx, 'SALVAGE CRATE... ' + (Math.floor(T.crateT * 6) % 2 ? '?' : '!'), c.x + 13, yy + 1, 10, { font: 'small' });
+        else {
+          var rr = RARITY[T.crate.rarity];
+          var rc = T.crate.rarity === 'epic' && Math.floor(T.t * 6) % 2 ? 10 : rr.col;
+          F.draw(ctx, rr.name, c.x + 13, yy + 1, rc, { font: 'small' });
+          UI.costRow(c.x + 16 + F.measure(rr.name, 'small'), yy, T.crate.reward, null);
+          if (T.crate.cosmetic) F.draw(ctx, '★ ' + DH.Prog.cosmeticName(T.crate.cosmetic), c.x + 13, yy + 9, 14, { font: 'small' });
+          if (T.revealT < 0.6 && Math.random() < 0.6) burst(S.cam.x + c.x + 5, S.cam.y + yy + 3, 2, [rr.col, 7, 10], 50, 0.5);
+        }
       }
+      yy += crateH;
+    }
+    // pilot rank bar
+    if (T.done) {
+      var v = xpView(T, T.xpShown);
+      var pop = T.rankPop > 0 && Math.floor(T.t * 10) % 2;
+      F.draw(ctx, 'RANK ' + v.rank + ' ' + D.rankTitle(v.rank), c.x + 2, yy, pop ? 7 : 12, { font: 'small' });
+      F.draw(ctx, '+' + Math.round(T.xpShown) + ' XP', c.x + c.w - 2, yy, 11, { font: 'small', align: 'right' });
+      if (T.rankSeen > T.xpBefore.rank) F.draw(ctx, 'RANK UP!', c.x + c.w / 2 + 8, yy, Math.floor(T.t * 5) % 2 ? 10 : 9, { font: 'small', align: 'center' });
+      UI.bar(c.x + 2, yy + 7, c.w - 4, 4, v.xp / v.need, pop ? 7 : 12, 1);
+    }
+    yy += 15;
+    if (goal && T.done) {
+      var gt = 'NEXT GOAL: ' + DH.Prog.goalText(goal.g) + (goal.pr[1] > 1 ? ' ' + U.fmt(goal.pr[0]) + '/' + U.fmt(goal.pr[1]) : '');
+      while (F.measure(gt, 'small') > c.w - 4 && gt.length > 8) gt = gt.slice(0, -2);
+      F.draw(ctx, gt, c.x + 2, yy, goal.f >= 0.75 ? 11 : 13, { font: 'small' });
+    }
+    if (goal) yy += sl;
+    if (T.done && Math.random() < 0.3) burst(S.cam.x + R.W / 2 + rnd(-w / 2, w / 2), S.cam.y + y, 1, [10, 7, 9], 30, 0.6);
+    var by = y + h - 19;
+    var ready = T.done && (!T.crate || T.crateOpen);
+    var canAgain = s.unlocked.goals && s.stats.runs >= 3;
+    if (ready) {
+      if (canAgain) {
+        var bw = Math.floor((c.w - 6) / 2);
+        if (UI.button(c.x, by, bw, 15, 'SHIP', { style: 'primary', id: 'run:continue' }) || In.key('Enter', ' ')) { leaveTally(false); return; }
+        if (UI.button(c.x + bw + 6, by, bw, 15, 'AGAIN', { style: 'warm', icon: 'launch', id: 'run:again', sound: 'click' }) || In.key('l')) { leaveTally(true); return; }
+      } else if (UI.button(c.x + c.w / 2 - 40, by, 80, 15, 'CONTINUE', { style: 'good', id: 'run:continue' }) || In.key('Enter', ' ')) { leaveTally(false); return; }
     } else if (In.released || In.key('Enter', ' ')) {
-      T.shown = T.base; // tap to skip the count
+      // tap to skip ahead
+      if (!T.done) T.shown = T.base;
+      else if (T.crate && !T.crateOpen) openCrateNow();
     }
   }
 

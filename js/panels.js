@@ -206,4 +206,122 @@
       return true;
     }
   };
+
+  // ------------------------------------------------------------------ daily care package (consecutive-day streak)
+  P.gift = {
+    open: function (p) {
+      var s = G().state, Pg = DH.Prog;
+      p.data.t = 0;
+      p.data.days = Pg.streakPreview(s);
+      p.data.reward = Pg.giftFor(s, p.data.days);
+      p.data.prevDays = s.streak.days || 0;
+      var today = U.dayNumber();
+      p.data.gap = s.streak.lastDay === null || s.streak.lastDay === undefined ? null : today - s.streak.lastDay;
+      p.data.claimed = null;
+      DH.Snd.play('crate');
+    },
+    close: function (p) { if (!p.data.claimed) P.gift.claim(p); },
+    claim: function (p) {
+      var s = G().state;
+      p.data.claimed = DH.Prog.claimGift(s) || { days: p.data.days, reward: p.data.reward };
+      p.data.ct = 0;
+      DH.Snd.play('reveal', DH.Prog.cycleDay(p.data.days) === D.STREAK.cycle ? 2 : 1);
+      R.addShake(2);
+    },
+    draw: function (p, dt) {
+      var s = G().state, d = p.data, Pg = DH.Prog;
+      d.t += dt;
+      if (d.claimed) d.ct += dt;
+      var r = UI.panelRect(240, 150);
+      var c = UI.panelFrame(r.x, r.y, r.w, r.h, 'DAILY CARE PACKAGE', { icon: 'heart' });
+      if (c.closed) return false;
+      var y = c.y + 1;
+      var cd = Pg.cycleDay(d.days);
+      F.draw(R.ctx, 'DAY ' + d.days + ' ABOARD', c.x, y, 10);
+      var note = null;
+      if (d.gap === 2 && d.prevDays > 0) note = 'YOU MISSED A DAY - STREAK KEPT!';
+      else if (d.days === 1 && d.prevDays > 1) note = 'NEW STREAK (BEST ' + (s.streak.best || d.prevDays) + ')';
+      if (note && F.measure('DAY ' + d.days + ' ABOARD') + F.measure(note, 'small') + 6 <= c.w) { F.draw(R.ctx, note, c.x + c.w, y + 1, 13, { font: 'small', align: 'right' }); note = null; }
+      y += 11;
+      if (note) { F.draw(R.ctx, note, c.x, y - 1, 13, { font: 'small' }); y += 7; }
+      // the 7-day cycle
+      var n = D.STREAK.cycle, gap = 2, bw = Math.floor((c.w - gap * (n - 1)) / n), bh = 22;
+      for (var i = 1; i <= n; i++) {
+        var bx = c.x + (i - 1) * (bw + gap);
+        var past = i < cd || (i === cd && d.claimed);
+        var now = i === cd && !d.claimed;
+        var col = past ? 3 : (now ? (Math.floor(d.t * 4) % 2 ? 9 : 10) : 1);
+        R.box(bx, y, bw, bh, 0);
+        R.rect(bx + 1, y + 1, bw - 2, bh - 2, col);
+        R.rect(bx + 1, y + 1, bw - 2, 1, past ? 11 : (now ? 7 : 13));
+        F.draw(R.ctx, String(i), bx + bw / 2, y + 3, past ? 11 : 7, { font: 'small', align: 'center' });
+        var icn = past ? 'check' : (i === n ? 'star' : 'heart');
+        var im = Spr.icon(icn);
+        R.img(past || now || i === n ? im : Spr.iconSil(icn, 5), bx + Math.floor((bw - im.width) / 2), y + 11);
+      }
+      y += bh + 5;
+      var lbl = d.claimed ? 'YOU GOT:' : 'TODAY\'S PACKAGE:';
+      F.draw(R.ctx, lbl, c.x, y + 1, 13, { font: 'small' });
+      if (UI.costWidth(d.reward) + F.measure(lbl, 'small') + 4 > c.w) { y += 8; UI.costRow(c.x, y, d.reward, null); }
+      else UI.costRow(c.x + 4 + F.measure(lbl, 'small'), y, d.reward, null);
+      y += 10;
+      F.draw(R.ctx, '+ FIRST RUN TODAY BRINGS HOME +' + Math.round(D.STREAK.firstRunBonus * 100) + '% ORE', c.x, y, 11, { font: 'small' });
+      y += 9;
+      if (d.claimed) {
+        var next = Pg.cycleDay(d.days + 1);
+        var hint = next === n ? 'TOMORROW: THE BIG ONE (DAY ' + n + ')!' : 'COME BACK TOMORROW FOR DAY ' + (d.days + 1) + '.';
+        UI.para(hint + ' MISSING ONE DAY WON\'T BREAK YOUR STREAK.', c.x, y, c.w, 6);
+        if (d.ct < 0.5 && Math.random() < 0.5) {
+          var dx = c.x + Math.random() * c.w, dy = c.y + 20 + Math.random() * 20;
+          R.pset(dx, dy, 10); R.pset(dx + 1, dy, 7);
+        }
+        if (UI.button(c.x + c.w / 2 - 35, c.y + c.h - 18, 70, 16, 'NICE!', { style: 'good', id: 'gift:ok' })) return false;
+      } else {
+        UI.para('COME BACK EACH DAY - THE PACKAGE GROWS ALL WEEK.', c.x, y, c.w, 6);
+        if (UI.button(c.x + c.w / 2 - 40, c.y + c.h - 18, 80, 16, 'OPEN IT!', { style: 'warm', id: 'gift:claim', sound: 'click' })) P.gift.claim(p);
+      }
+      return true;
+    }
+  };
+
+  // ------------------------------------------------------------------ pilot rank & records
+  P.rank = {
+    draw: function (p) {
+      var s = G().state;
+      var r = UI.panelRect(240, 160);
+      var c = UI.panelFrame(r.x, r.y, r.w, r.h, 'PILOT RANK', { icon: 'star' });
+      if (c.closed) return false;
+      var y = c.y + 1, rank = s.rank || 1, need = Sim.xpNeed(s);
+      F.draw(R.ctx, 'RANK ' + rank + ' - ' + D.rankTitle(rank), c.x, y, 10);
+      y += 10;
+      UI.bar(c.x, y, c.w, 6, (s.xp || 0) / need, 12, 1);
+      y += 8;
+      F.draw(R.ctx, Math.floor(s.xp || 0) + ' / ' + need + ' XP  -  ' + (need - Math.floor(s.xp || 0)) + ' TO RANK ' + (rank + 1), c.x, y, 6, { font: 'small' });
+      y += 9;
+      F.draw(R.ctx, 'NEXT RANK PAYS:', c.x, y + 1, 13, { font: 'small' });
+      UI.costRow(c.x + 4 + F.measure('NEXT RANK PAYS:', 'small'), y, Sim.rankReward(s, rank + 1), null);
+      y += 9;
+      var keys = Object.keys(D.RANK_REWARDS).map(Number).sort(function (a, b) { return a - b; });
+      var nextCos = keys.filter(function (k) { return k > rank && !Sim.ownsUnlock(s, D.RANK_REWARDS[k]); })[0];
+      if (nextCos) { F.draw(R.ctx, '★ RANK ' + nextCos + ' UNLOCKS ' + DH.Prog.cosmeticName(D.RANK_REWARDS[nextCos]), c.x, y, 14, { font: 'small' }); y += 9; }
+      y += 2;
+      R.rect(c.x, y, c.w, 1, 13); y += 4;
+      y += UI.para('EARN XP: 1 PER ORE BROUGHT HOME, GOALS, BUILDS, UPGRADES, PARTS, RECRUITS, RESEARCH, CRATES AND DAILY ANOMALIES.', c.x, y, c.w, 6) + 3;
+      R.rect(c.x, y, c.w, 1, 13); y += 4;
+      var st = s.stats;
+      var recs = [
+        ['BEST HAUL', String(st.bestHaul || 0)], ['BEST CHAIN', 'X' + (st.bestCombo || 0)],
+        ['CRATES OPENED', String(st.crates || 0)], ['DAY STREAK', (s.streak.days || 0) + ' (BEST ' + (s.streak.best || 0) + ')'],
+        ['RUNS', String(st.runs)], ['ORE MINED', U.fmt(st.totalOre || 0)],
+        ['ROCKS SMASHED', U.fmt(st.smashed || 0)], ['FEVERS', String(st.fevers || 0)]
+      ];
+      var half = Math.floor(c.w / 2);
+      recs.forEach(function (rc, i) {
+        var rx = c.x + (i % 2) * half, ry = y + Math.floor(i / 2) * 8;
+        F.draw(R.ctx, rc[0], rx, ry, 13, { font: 'small' });
+        F.draw(R.ctx, rc[1], rx + half - 6, ry, 7, { font: 'small', align: 'right' });
+      });
+      return true;
+    }
+  };
 })(window.DH);

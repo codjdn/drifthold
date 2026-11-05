@@ -160,6 +160,7 @@
           s.stats.partsBuilt++;
           out.partsDone.push(job);
           Sim.emit('part', { part: job.part, lvl: job.lvl });
+          Sim.addXp(s, D.XP.part + job.lvl * 2, 'part');
         }
       }
     }
@@ -249,6 +250,7 @@
     s.slots[slot] = { type: type, lvl: 1, decor: null, built: Date.now() };
     s.stats.builds++;
     Sim.emit('build', { type: type, slot: slot });
+    Sim.addXp(s, D.XP.build, 'build');
     if (type === 'observatory') Sim.revealFromObservatory(s);
     return true;
   };
@@ -261,6 +263,7 @@
     r.built = Date.now();
     s.stats.upgrades++;
     Sim.emit('upgrade', { type: r.type, slot: slot, lvl: r.lvl });
+    Sim.addXp(s, D.XP.upgrade * r.lvl / 2, 'upgrade');
     if (r.type === 'observatory') Sim.revealFromObservatory(s);
     return true;
   };
@@ -321,6 +324,7 @@
     s.stats.recruited++;
     s.seen.traits[c.trait] = s.seen.traits[c.trait] || { name: c.name, look: c.look };
     Sim.emit('recruit', { crew: c });
+    Sim.addXp(s, D.XP.recruit, 'recruit');
     return true;
   };
 
@@ -363,6 +367,7 @@
     if (!Sim.pay(s, D.RESEARCH[id].cost)) return false;
     s.research[id] = true;
     Sim.emit('research', { id: id });
+    Sim.addXp(s, D.XP.research * D.RESEARCH[id].tier, 'research');
     return true;
   };
 
@@ -404,7 +409,46 @@
     if (info && info.hits === 0 && total > 0) s.stats.perfectRuns++;
     if (info) { s.stats.hits += info.hits || 0; s.stats.cells += info.cells || 0; }
     Sim.emit('run', { haul: haul, total: total, info: info || {} });
+    // XP: one per ore delivered, plus a little for a clean run
+    Sim.addXp(s, total + (info && info.hits === 0 && total > 0 ? D.XP.perfect : 0), 'run');
     return total;
+  };
+
+  // ------------------------------------------------------------------ pilot rank
+  Sim.xpNeed = function (s) { return D.xpForRank(s.rank || 1); };
+  // what a rank-up pays: a bundle of the current sector's ores scaled to the drone, plus extras
+  Sim.rankReward = function (s, rank) {
+    var st = Sim.droneStats(s);
+    var amt = Math.max(8, Math.round(st.cargo * 0.35));
+    var ores = Object.keys(D.sector(s.sector).ores).filter(function (k) { return k !== 'dust'; });
+    var rw = {};
+    rw[ores[rank % ores.length]] = amt;
+    if (ores.length > 1) rw[ores[(rank + 1) % ores.length]] = Math.round(amt * 0.4);
+    if (rank % 5 === 0) rw.dust = 1 + Math.floor(rank / 15);
+    if (rank % 4 === 0 && Sim.findSlot(s, 'refinery') >= 0) rw.alloy = Math.round(amt * 0.3);
+    if (rank % 5 === 0 && Sim.findSlot(s, 'hydroponics') >= 0) rw.food = Math.round(amt * 0.6);
+    return rw;
+  };
+  Sim.addXp = function (s, n, why) {
+    n = Math.max(0, Math.round(n || 0));
+    if (!n) return 0;
+    if (!s.rank) s.rank = 1;
+    s.xp = (s.xp || 0) + n;
+    s.stats.xpTotal = (s.stats.xpTotal || 0) + n;
+    var ups = 0;
+    while (s.xp >= Sim.xpNeed(s) && ups < 20) {
+      s.xp -= Sim.xpNeed(s);
+      s.rank++;
+      ups++;
+      var rw = Sim.rankReward(s, s.rank);
+      Sim.give(s, rw, 'rank');
+      var cos = D.RANK_REWARDS[s.rank];
+      if (cos && Sim.ownsUnlock(s, cos)) cos = null;
+      if (cos) Sim.grantUnlock(s, cos);
+      Sim.emit('rank', { rank: s.rank, reward: rw, cosmetic: cos });
+    }
+    Sim.emit('xp', { n: n, why: why });
+    return n;
   };
 
   // completion: all sectors visited, all rooms at max

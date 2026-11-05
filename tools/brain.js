@@ -25,6 +25,7 @@ module.exports = function installBrain() {
     if (tip && tip.block) { s.tut.done[tip.id] = true; return; }
     if (G.sceneName === 'run') {
       const S = DH.Scenes.run.debug();
+      if (S && S.draft) { if (S.draft.t > 0.5) DH.Scenes.run.pickPerk(0); return; }
       if (S && S.phase === 'tally' && S.tally.done) DH.In.hit.Enter = true;
       else if (S && S.phase === 'tally') DH.In.released = true;
       return;

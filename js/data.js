@@ -166,9 +166,12 @@
     whale: { name: 'WHALESONG', main: 12, shade: 1, trim: 7, window: 15 },
     pearl: { name: 'PEARL', main: 15, shade: 14, trim: 7, window: 2 },
     void: { name: 'VOIDWALKER', main: 2, shade: 1, trim: 8, window: 14 },
-    aurora: { name: 'AURORA', main: 11, shade: 12, trim: 14, window: 7 }
+    aurora: { name: 'AURORA', main: 11, shade: 12, trim: 14, window: 7 },
+    ember: { name: 'EMBER', main: 9, shade: 4, trim: 10, window: 12 },
+    legend: { name: 'LEGEND', main: 10, shade: 8, trim: 7, window: 2 },
+    nebula: { name: 'NEBULA', main: 14, shade: 13, trim: 12, window: 7 }
   };
-  D.PAINT_ORDER = ['classic', 'midnight', 'cherry', 'mint', 'goldleaf', 'whale', 'pearl', 'void', 'aurora'];
+  D.PAINT_ORDER = ['classic', 'midnight', 'cherry', 'mint', 'goldleaf', 'whale', 'pearl', 'void', 'aurora', 'ember', 'legend', 'nebula'];
   D.HULLS = {
     steel: { name: 'STEEL', main: 6, shade: 5, light: 7, trim: 13 },
     rust: { name: 'RUST', main: 9, shade: 4, light: 15, trim: 2 },
@@ -178,9 +181,12 @@
     cream: { name: 'CREAM', main: 15, shade: 4, light: 7, trim: 9 },
     gold: { name: 'GOLD', main: 10, shade: 9, light: 7, trim: 4 },
     void: { name: 'VOID', main: 5, shade: 0, light: 13, trim: 8 },
-    aurora: { name: 'AURORA', main: 14, shade: 2, light: 7, trim: 12 }
+    aurora: { name: 'AURORA', main: 14, shade: 2, light: 7, trim: 12 },
+    ember: { name: 'EMBER', main: 8, shade: 2, light: 9, trim: 10 },
+    starlit: { name: 'STARLIT', main: 1, shade: 0, light: 12, trim: 10 },
+    nebula: { name: 'NEBULA', main: 13, shade: 2, light: 14, trim: 7 }
   };
-  D.HULL_ORDER = ['steel', 'rust', 'navy', 'mint', 'plum', 'cream', 'gold', 'void', 'aurora'];
+  D.HULL_ORDER = ['steel', 'rust', 'navy', 'mint', 'plum', 'cream', 'gold', 'void', 'aurora', 'ember', 'starlit', 'nebula'];
   D.DECOR = {
     plant: { name: 'POTTED FERN' }, poster: { name: 'SUNSET POSTER' }, rug: { name: 'COMFY RUG' },
     lamp: { name: 'LAVA LAMP' }, fishtank: { name: 'FISH TANK' }, cat: { name: 'SHIP CAT' },
@@ -281,6 +287,60 @@
 
   // ------------------------------------------------------------------ goals
   D.GOAL_COSMETICS = [{ kind: 'decor', id: 'poster' }, { kind: 'decor', id: 'rug' }, { kind: 'hull', id: 'mint' }, { kind: 'decor', id: 'globe' }];
+
+  // ------------------------------------------------------------------ pilot rank (XP from everything you do)
+  // XP needed to go from rank r to r+1. Early ranks come every couple of runs, later ones stretch out.
+  D.xpForRank = function (r) { return Math.round(30 + 22 * Math.pow(r, 1.35)); };
+  D.XP = { goal: 20, build: 25, upgrade: 20, part: 10, recruit: 15, research: 20, daily: 40, perfect: 10, crate: 10 };
+  D.RANK_TITLES = ['CADET', 'DRIFTER', 'PROSPECTOR', 'ROCKHOPPER', 'VEINSEEKER', 'STARMINER', 'VOIDRUNNER', 'COMET RIDER', 'NEBULA ACE', 'DRIFT LEGEND'];
+  D.rankTitle = function (r) { return D.RANK_TITLES[Math.min(D.RANK_TITLES.length - 1, Math.floor((r - 1) / 3))]; };
+  // cosmetics that only rank-ups give out
+  D.RANK_REWARDS = { 3: { kind: 'paint', id: 'ember' }, 6: { kind: 'hull', id: 'ember' }, 10: { kind: 'paint', id: 'legend' }, 15: { kind: 'hull', id: 'starlit' } };
+
+  // ------------------------------------------------------------------ run combos
+  // keep collecting ore without a long pause (drilling counts) and the chain grows.
+  // every COMBO_STEP pieces in one chain pays bonus ore.
+  D.COMBO = { window: 2.6, step: 10, maxBonus: 8 };
+
+  // ------------------------------------------------------------------ salvage crates (a rare drifting crate on some runs)
+  D.CRATE = { chance: 0.4, life: 26 };
+  D.CRATE_RARITY = { common: 64, rare: 29, epic: 7 };
+  D.CRATE_COSMETICS = [{ kind: 'paint', id: 'nebula' }, { kind: 'hull', id: 'nebula' }];
+
+  // ------------------------------------------------------------------ daily voyage (consecutive days aboard)
+  // one missed day is forgiven; the 7-day cycle repeats with day 7 the big one.
+  D.STREAK = { grace: 1, cycle: 7, firstRunBonus: 0.5 };
+
+  // ------------------------------------------------------------------ dash, fever, perks, events (drone run)
+  // DASH: a short burst you aim with a quick tap/click or Space/Shift. It is invulnerable,
+  // smashes small grey rocks and knocks a chunk out of ore rocks.
+  D.DASH = { speed: 3.1, time: 0.26, cooldown: 2.4, grace: 0.14, smashR: 9 };
+  // FEVER: a long chain switches the run into overdrive until the chain breaks
+  D.FEVER = { at: 30, atOverclock: 15, magnet: 1.6 };
+  // star cores open a pick-1-of-3 perk draft that lasts for the rest of the run
+  D.PERKS = {
+    twin: { name: 'TWIN DRILL', icon: 'drill', desc: '+1 ORE FROM EVERY CHUNK.' },
+    megamag: { name: 'MEGA MAGNET', icon: 'magnet', desc: 'MAGNET RANGE X2.' },
+    afterburn: { name: 'AFTERBURNER', icon: 'speed', desc: 'DASH RECHARGES TWICE AS FAST.' },
+    wrecker: { name: 'WRECKING BALL', icon: 'bang', desc: 'DASH SMASHES ANY ROCK. SMASHED ROCKS DROP ORE.' },
+    keeper: { name: 'CHAIN KEEPER', icon: 'clock', desc: 'CHAINS LAST 75% LONGER.' },
+    sipper: { name: 'FUEL SIPPER', icon: 'fuel', desc: 'FUEL BURNS 30% SLOWER.' },
+    bulwark: { name: 'BULWARK', icon: 'shield', desc: '+2 SHIELDS, RIGHT NOW.' },
+    overclock: { name: 'OVERCLOCK', icon: 'star', desc: 'FEVER STARTS AT A X15 CHAIN.' },
+    rich: { name: 'RICH VEINS', icon: 'gold', desc: '25% OF CHUNKS COME OUT DOUBLE.' },
+    scavenger: { name: 'SCAVENGER', icon: 'plus', desc: 'PICKUPS FLOAT TO YOU. FUEL CELLS +50%.' },
+    salvager: { name: 'SALVAGER', icon: 'cargo', desc: 'A SALVAGE CRATE APPEARS. RARE OR BETTER.' }
+  };
+  D.PERK_ORDER = ['twin', 'megamag', 'afterburn', 'wrecker', 'keeper', 'sipper', 'bulwark', 'overclock', 'rich', 'scavenger', 'salvager'];
+  D.STARCORE = { first: [9, 17], dropChance: 0.05, max: 3 };
+  // one surprise per run (from the 3rd run on)
+  D.EVENTS = {
+    orestorm: { name: 'ORE STORM!', sub: 'ORE ROCKS INCOMING - GRAB THEM', w: 3 },
+    geode: { name: 'GIANT GEODE!', sub: 'A HUGE RICH ROCK HAS APPEARED', w: 3 },
+    bloom: { name: 'FUEL BLOOM!', sub: 'FUEL CELLS ALL AROUND YOU', w: 2 },
+    double: { name: 'DOUBLE TIME!', sub: 'EVERY CHUNK X2 FOR 10 SECONDS', w: 2 }
+  };
+  D.EVENT_AT = [16, 30];
 
   // ------------------------------------------------------------------ tuning for the drone run
   D.RUN = {

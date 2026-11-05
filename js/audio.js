@@ -124,6 +124,48 @@
       case 'blip': tone(NOTE(88), 0.03, { vol: 0.04 }); break;
       case 'spill': arp([NOTE(76), NOTE(72), NOTE(67)], 0.04, { vol: 0.06 }); break;
       case 'shield': arp([NOTE(64), NOTE(71)], 0.06, { vol: 0.07, type: 'triangle' }); break;
+      case 'combo':
+        // rises with the chain tier (p)
+        arp([NOTE(79 + (p || 0)), NOTE(83 + (p || 0)), NOTE(86 + (p || 0)), NOTE(91 + (p || 0))], 0.04, { vol: 0.07 });
+        tone(NOTE(67 + (p || 0)), 0.18, { type: 'triangle', vol: 0.08 });
+        break;
+      case 'rankup':
+        arp([NOTE(67), NOTE(72), NOTE(76), NOTE(79), NOTE(84)], 0.07, { vol: 0.08, len: 0.12 });
+        arp([NOTE(48), NOTE(55), NOTE(60), NOTE(64)], 0.14, { type: 'triangle', vol: 0.12, len: 0.3 });
+        tone(NOTE(88), 0.6, { delay: 0.42, vol: 0.07, type: 'triangle' });
+        tone(NOTE(91), 0.5, { delay: 0.5, vol: 0.05 });
+        break;
+      case 'crate':
+        tone(NOTE(84), 0.06, { vol: 0.06 }); tone(NOTE(91), 0.06, { delay: 0.08, vol: 0.06 }); tone(NOTE(96), 0.12, { delay: 0.16, vol: 0.05, type: 'triangle' });
+        break;
+      case 'dash': noise(0.25, { filter: 'bandpass', freq: 600, slide: 4000, vol: 0.16, q: 1.5 }); tone(220, 0.2, { type: 'sawtooth', slide: 880, vol: 0.05 }); break;
+      case 'smash': noise(0.3, { freq: 2200, slide: 150, vol: 0.24 }); tone(110, 0.18, { type: 'square', slide: 45, vol: 0.09 }); tone(NOTE(84 + (p || 0)), 0.06, { delay: 0.04, vol: 0.05 }); break;
+      case 'fever':
+        arp([NOTE(72), NOTE(79), NOTE(84), NOTE(91), NOTE(96)], 0.05, { vol: 0.09, len: 0.09 });
+        noise(0.5, { filter: 'highpass', freq: 3000, slide: 8000, vol: 0.08 });
+        tone(NOTE(48), 0.5, { type: 'sawtooth', vol: 0.06, slide: NOTE(60) });
+        break;
+      case 'feverEnd': arp([NOTE(84), NOTE(79), NOTE(72)], 0.06, { vol: 0.06, type: 'triangle' }); break;
+      case 'core': arp([NOTE(88), NOTE(84), NOTE(91), NOTE(96)], 0.05, { vol: 0.07, type: 'triangle' }); tone(NOTE(60), 0.3, { type: 'sine', vol: 0.1 }); break;
+      case 'perk': arp([NOTE(76), NOTE(83), NOTE(88), NOTE(95)], 0.045, { vol: 0.08 }); arp([NOTE(52), NOTE(64)], 0.1, { type: 'triangle', vol: 0.1 }); break;
+      case 'event':
+        tone(NOTE(81), 0.09, { vol: 0.07 }); tone(NOTE(81), 0.09, { delay: 0.12, vol: 0.07 });
+        arp([NOTE(76), NOTE(81), NOTE(88)], 0.07, { delay: 0.26, vol: 0.08 });
+        tone(NOTE(45), 0.5, { type: 'triangle', vol: 0.12, delay: 0.26 });
+        break;
+      case 'chirp': tone(NOTE(84 + (p || 0)), 0.05, { vol: 0.06, type: 'triangle', slide: NOTE(91 + (p || 0)) }); tone(NOTE(91 + (p || 0)), 0.06, { delay: 0.06, vol: 0.05, type: 'triangle' }); break;
+      case 'rattle': noise(0.06, { filter: 'bandpass', freq: 900 + Math.random() * 400, vol: 0.12, q: 4 }); break;
+      case 'reveal':
+        // p: 0 common, 1 rare, 2 epic
+        if ((p || 0) >= 2) {
+          arp([NOTE(72), NOTE(76), NOTE(79), NOTE(84), NOTE(88), NOTE(91), NOTE(96)], 0.05, { vol: 0.08, len: 0.1 });
+          noise(0.6, { filter: 'highpass', freq: 5000, vol: 0.06, delay: 0.1 });
+          tone(NOTE(48), 0.6, { type: 'triangle', vol: 0.12 });
+        } else if (p === 1) {
+          arp([NOTE(72), NOTE(79), NOTE(84), NOTE(88)], 0.06, { vol: 0.08 });
+          tone(NOTE(55), 0.4, { type: 'triangle', vol: 0.1 });
+        } else arp([NOTE(72), NOTE(76), NOTE(79)], 0.06, { vol: 0.07 });
+        break;
       default: tone(600, 0.05, { vol: 0.05 });
     }
   };
@@ -151,6 +193,7 @@
     title: { bpm: 70, chords: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], arp: true, bass: false },
     ship: { bpm: 64, chords: [[50, 57, 62], [46, 53, 58], [48, 55, 60], [45, 52, 57]], arp: true, bass: false },
     run: { bpm: 128, chords: [[45, 52, 57], [41, 48, 53], [43, 50, 55], [40, 47, 52]], arp: true, bass: true },
+    fever: { bpm: 160, chords: [[57, 64, 69], [53, 60, 65], [55, 62, 67], [52, 59, 64]], arp: true, bass: true, hat: true },
     map: { bpm: 60, chords: [[52, 59, 64], [48, 55, 60], [50, 57, 62], [47, 54, 59]], arp: true, bass: false }
   };
   var seq = { step: 0, next: 0 };
@@ -187,6 +230,7 @@
         tone(NOTE(n), spb * 8.5, { type: 'triangle', vol: 0.035 - i * 0.006, attack: 0.5, delay: delay, bus: musicBus });
       });
     }
+    if (tr.hat) noise(0.03, { filter: 'highpass', freq: inBar % 2 ? 9000 : 6000, vol: inBar % 2 ? 0.015 : 0.03, delay: delay, bus: musicBus });
     if (tr.bass && inBar % 2 === 0) {
       tone(NOTE(chord[0] - 12), spb * 0.9, { type: 'square', vol: 0.03, delay: delay, bus: musicBus });
     }

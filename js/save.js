@@ -4,7 +4,7 @@
   'use strict';
   var Save = {};
   var KEY = 'drifthold.save';
-  Save.VERSION = 2;
+  Save.VERSION = 3;
 
   Save.defaultState = function () {
     var now = Date.now();
@@ -17,8 +17,11 @@
       stats: {
         runs: 0, mined: {}, bestHaul: 0, totalOre: 0, hits: 0, cells: 0, perfectRuns: 0,
         produced: { food: 0, alloy: 0, data: 0 }, playTime: 0, dailyDone: 0, recruited: 0, trades: 0,
-        upgrades: 0, builds: 0, partsBuilt: 0
+        upgrades: 0, builds: 0, partsBuilt: 0, bestCombo: 0, crates: 0, xpTotal: 0, smashed: 0, fevers: 0
       },
+      rank: 1, xp: 0,
+      streak: { lastDay: null, days: 0, best: 0, claimed: null },
+      dayBonus: null,
       hull: 2,
       slots: [{ type: 'bridge', lvl: 1, decor: null }, null],
       blueprints: { bridge: true, quarters: true },
@@ -57,6 +60,25 @@
       // v1 had no per-planet purchase record
       s.bought = s.bought || {};
       s.v = 2;
+    },
+    2: function (s) {
+      // v3 adds pilot rank. Older captains start at the rank their past work earned (no back-pay of rewards).
+      var st = s.stats || {};
+      var xp = (st.totalOre || 0) + (s.goalsDone || 0) * DH.D.XP.goal + (st.builds || 0) * DH.D.XP.build +
+        (st.upgrades || 0) * DH.D.XP.upgrade + (st.partsBuilt || 0) * DH.D.XP.part + (st.recruited || 0) * DH.D.XP.recruit +
+        (st.dailyDone || 0) * DH.D.XP.daily;
+      var rank = 1;
+      while (xp >= DH.D.xpForRank(rank) && rank < 200) { xp -= DH.D.xpForRank(rank); rank++; }
+      s.rank = rank; s.xp = Math.floor(xp);
+      // rank-only cosmetics would otherwise be out of reach, so hand those over
+      var own = s.owned || (s.owned = {});
+      for (var r in DH.D.RANK_REWARDS) {
+        if (+r > rank) continue;
+        var u = DH.D.RANK_REWARDS[r];
+        own[u.kind] = own[u.kind] || {};
+        own[u.kind][u.id] = true;
+      }
+      s.v = 3;
     }
   };
 

@@ -20,6 +20,7 @@ module.exports = async (page) => {
     Object.keys({ welcome: 1, build1: 1, map: 1, visit: 1, goals: 1, expand: 1, workshop: 1, assign: 1, log: 1, food: 1, daily: 1, refinery: 1, travel: 1 }).forEach(k => s.tut.done[k] = true);
     s.tut.done.logOpened = true;
     s.lastTick = Date.now() - 3 * 3600 * 1000;
+    s.streak.claimed = DH.U.dayNumber(); // today's care package is tested in test-hooks.js
     localStorage.setItem('drifthold.save', JSON.stringify(s));
   });
   await page.reload();

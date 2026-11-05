@@ -143,6 +143,8 @@
     var night = (time % 160) > 128; // short "quiet hours" in the ship's day
     s.crew.forEach(function (c, idx) {
       var a = actorFor(c);
+      if (a.hop > 0) a.hop = Math.max(0, a.hop - dt);
+      if (a.say) { a.say.t -= dt; if (a.say.t <= 0) a.say = null; }
       if (a.slot === null || !s.slots[a.slot]) { a.slot = homeSlot(s, c); a.x = 8 + Math.random() * 26; }
       if (a.bubble) { a.bubble.t -= dt; if (a.bubble.t <= 0) a.bubble = null; }
       a.t -= dt;
@@ -225,6 +227,7 @@
     if (a.state === 'sleep' && a.bed) {
       img = sp.sleep;
       R.img(img, ix + a.bed.x, iy + a.bed.y - 4);
+      a.rect = { x: ix + a.bed.x - 1, y: iy + a.bed.y - 6, w: img.width + 2, h: img.height + 4 };
       if (Math.floor(time * 1.5 + a.seed * 4) % 3 === 0) DH.Font.draw(R.ctx, 'Z', ix + a.bed.x + 11, iy + a.bed.y - 10 - Math.floor((time * 3) % 3), 7, { font: 'small' });
       return;
     }
@@ -236,7 +239,9 @@
     if (a.state === 'sit') y += 2;
     if (a.state === 'work' && Math.floor(time * 2 + a.seed * 3) % 4 === 0) y -= 1;
     if (a.state === 'chat' && Math.floor(time * 3 + a.seed * 3) % 2 === 0) y -= 1;
+    if (a.hop > 0) y -= Math.round(Math.sin(a.hop / 0.45 * Math.PI) * 5);
     R.img(img, x, y);
+    a.rect = { x: x - 2, y: y - 2, w: img.width + 4, h: img.height + 4 };
     if (a.bubble && a.state !== 'door') {
       var bx = x + 3, by = y - 10;
       R.box(bx - 1, by - 1, 11, 10, 0);
@@ -245,6 +250,37 @@
       var ic = DH.Spr.icon(a.bubble.icon);
       R.img(ic, bx + 1, by + 1);
     }
+  };
+
+  // tapping a crew member: they hop, chirp and say something in character
+  var LINES = {
+    tinkerer: ['NEED A WRENCH?', 'I CAN FIX THAT!', 'ONE MORE BOLT...'],
+    greenthumb: ['THE FERNS SAY HI!', 'GROW, LITTLE ONES!', 'SMELL THAT SOIL!'],
+    smelter: ['HOT HOT HOT!', 'ALLOY TIME!', 'MIND THE SPARKS!'],
+    stargazer: ['SO MANY STARS!', 'I SAW A COMET!', 'LOOK UP, CAPTAIN!'],
+    scholar: ['FASCINATING!', 'DATA IS BEAUTIFUL', 'HYPOTHESIS: SNACKS'],
+    cook: ['SOUP\'S ON!', 'TASTE THIS!', 'MORE SALT?'],
+    pilot: ['LET\'S FLY FASTER!', 'BARREL ROLL?', 'I LOVE THIS SHIP!'],
+    mechanic: ['SHE\'S PURRING!', 'NEEDS MORE TAPE', 'ALL SYSTEMS GO!'],
+    cheerful: ['BEST DAY EVER!', 'HI HI HI!', 'YOU\'RE GREAT!'],
+    lucky: ['FEELING LUCKY!', 'FOUND A PENNY!', 'GOOD VIBES!'],
+    nightowl: ['IS IT NIGHT YET?', 'I LOVE THE DARK', '*YAWNS*'],
+    sleepyhead: ['ZZZ... HUH? OH HI', 'FIVE MORE MINUTES', 'NAP BUDDY?']
+  };
+  var GENERIC = ['HI CAPTAIN!', 'HEY!', 'OH! HELLO!', 'NICE HAUL!', 'GO GO GO!'];
+  var SPAM = ['OKAY OKAY!', 'THAT TICKLES!', 'HEE HEE!', 'STOP IT!', 'WHEEE!'];
+  Crew.poke = function (c) {
+    var a = actorFor(c), now = Date.now();
+    a.pokes = (a.lastPoke && now - a.lastPoke < 1500) ? (a.pokes || 0) + 1 : 1;
+    a.lastPoke = now;
+    a.hop = 0.45;
+    var pool = a.pokes >= 4 ? SPAM : (Math.random() < 0.65 ? (LINES[c.trait] || GENERIC) : GENERIC);
+    a.say = { text: U.pick(pool), t: 1.8 };
+    a.bubble = { icon: a.pokes >= 4 ? 'smile' : U.pick(['heart', 'note', 'smile', 'star']), t: 1.6 };
+    if (a.state === 'sleep') { a.state = 'idle'; a.t = 1.5; a.say = { text: U.pick(['WHA-? I\'M UP!', 'HUH?! OH, HI!']), t: 1.8 }; }
+    var pitch = Math.floor(a.seed * 8) + Math.min(8, a.pokes * 2);
+    if (DH.Snd) DH.Snd.play('chirp', pitch);
+    return a;
   };
 
   Crew.traitName = function (t) { return (D.TRAITS[t] || { name: t }).name; };
